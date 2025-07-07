@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import OpenAI from "openai"
 import { db } from "@/lib/database"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({

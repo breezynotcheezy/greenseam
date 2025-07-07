@@ -11,7 +11,7 @@ import {
   type ParsedPlay,
 } from "@/lib/parse-utils"
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 console.log("Parse API: Checking environment variables...")
 console.log("OPENAI_API_KEY exists:", !!process.env.OPENAI_API_KEY)
