@@ -1,0 +1,39 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Team {
+  id      Int     @id @default(autoincrement())
+  name    String  @unique
+  color   String?
+  emoji   String?
+  players Player[]
+}
+
+model Player {
+  id               Int               @id @default(autoincrement())
+  name             String
+  canonical        String            @unique
+  teamId           Int?
+  team             Team?             @relation(fields: [teamId], references: [id])
+  plateAppearances PlateAppearance[] @relation("PlayerPlateAppearances")
+}
+
+model PlateAppearance {
+  id       Int     @id @default(autoincrement())
+  playerId Int     @map("player_id")
+  player   Player  @relation("PlayerPlateAppearances", fields: [playerId], references: [id])
+  result   String
+  bbType   String?
+  gameDate String
+}
+
+// This file has been removed - using in-memory database instead
