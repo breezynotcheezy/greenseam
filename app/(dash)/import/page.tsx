@@ -4,15 +4,14 @@ import { Header } from "@/components/header"
 
 export default function ImportPage() {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="flex flex-col min-h-screen bg-gray-50">
       <Header
         title="Import GameChanger Data"
-        description="Upload your files and we'll automatically process them for analysis"
       />
 
-      <main className="p-8">
-        <div className="max-w-6xl mx-auto">
-          <div className="grid gap-8 lg:grid-cols-3">
+      <main className="flex-1 p-6 md:p-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid gap-6 lg:grid-cols-3 lg:gap-8">
             <div className="lg:col-span-2">
               <ImportPanel />
             </div>
@@ -25,3 +24,4 @@ export default function ImportPage() {
     </div>
   )
 }
+

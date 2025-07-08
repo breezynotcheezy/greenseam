@@ -1,112 +1,66 @@
-import { type NextRequest, NextResponse } from "next/server"
-import OpenAI from "openai"
-import { db } from "@/lib/database"
+import { NextResponse } from "next/server";
+import OpenAI from "openai";
 
-export const runtime = "nodejs"
+export const runtime = "nodejs";
 
-const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    })
-  : null
-
-export async function GET(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    // Require API key - no fallback
-    if (!openai) {
-      return NextResponse.json({ error: "OpenAI API key required" }, { status: 400 })
+    const { playerData } = await request.json();
+    
+    if (!playerData) {
+      return NextResponse.json(
+        { error: "Player data is required" },
+        { status: 400 }
+      );
     }
 
-    const { searchParams } = new URL(request.url)
-    const playerId = searchParams.get("id")
-
-    if (!playerId) {
-      return NextResponse.json({ error: "Player ID required" }, { status: 400 })
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { error: "OpenAI API key not configured" },
+        { status: 500 }
+      );
     }
 
-    const player = db.getPlayer(playerId)
-    if (!player) {
-      return NextResponse.json({ error: "Player not found" }, { status: 404 })
-    }
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
 
-    const plateAppearances = db.getPlateAppearances(playerId)
-    const stats = db.getPlayerStats().find((s) => s.playerId === playerId)
-
-    if (!stats) {
-      return NextResponse.json({ error: "Player stats not found" }, { status: 404 })
-    }
-
-    // Prepare detailed scouting data with specific numbers
-    const recentPA = plateAppearances.slice(-15)
-    const situationalData = recentPA.map((pa) => ({
-      result: pa.result,
-      ballType: pa.bbType,
-      count: pa.count,
-      situation: pa.situation,
-      inning: pa.inning,
-    }))
-
-    const scoutingReport = `
-PLAYER ANALYSIS: ${player.name} (${stats.team.name})
-
-CURRENT STATISTICS (${stats.paCount} PA):
-- Batting Average: ${stats.avg.toFixed(3)} (${stats.hits} hits in ${stats.paCount} PA)
-- Strikeout Rate: ${stats.kRate.toFixed(1)}% (${stats.strikeouts} strikeouts)
-- Walk Rate: ${stats.bbRate.toFixed(1)}% (${stats.walks} walks)
-- Ground Ball Rate: ${stats.gbPercent.toFixed(1)}%
-- Line Drive Rate: ${stats.ldPercent.toFixed(1)}%
-- Fly Ball Rate: ${stats.fbPercent.toFixed(1)}%
-- Extra Base Hits: ${stats.doubles} 2B, ${stats.triples} 3B, ${stats.homeRuns} HR
-
-LAST 15 PLATE APPEARANCES:
-${situationalData.map((pa, i) => `${i + 1}. ${pa.result}${pa.ballType ? ` (${pa.ballType})` : ""}${pa.count ? ` [${pa.count}]` : ""}`).join("\n")}
-`
+    // Format player stats for the prompt
+    const statsString = Object.entries(playerData)
+      .filter(([key, value]) => typeof value !== 'object' && key !== 'id')
+      .map(([key, value]) => `${key}: ${value}`)
+      .join('\n');
 
     const response = await openai.chat.completions.create({
-      model: "ft:gpt-3.5-turbo-1106:greenchanger:greenseam3:BqjZCdoJ",
+      model: "gpt-4o",
       messages: [
         {
           role: "system",
-          content: `You are a professional baseball scout. Based on the specific data provided, give:
-
-1. insight: ONE high-confidence observation using specific numbers from the data (1 sentence)
-2. recommendation: ONE specific, actionable coaching suggestion based on the data (1 sentence)
-3. strengths: Array of 2-4 key strengths (2-3 words each)
-4. weaknesses: Array of 1-3 areas for improvement (2-3 words each)
-
-Use ONLY the specific statistics provided. Be precise and reference actual numbers.
-
-Return ONLY valid JSON:
-{
-  "insight": "Single specific insight with numbers",
-  "recommendation": "Single specific coaching recommendation", 
-  "strengths": ["strength1", "strength2"],
-  "weaknesses": ["weakness1", "weakness2"]
-}`,
+          content: "You are an expert baseball analyst specializing in player performance analysis. Provide concise, insightful analysis based on player statistics. Focus on strengths, weaknesses, and actionable suggestions for improvement. Use baseball terminology appropriately. Keep responses under 150 words and make them specific to the player's stats."
         },
         {
           role: "user",
-          content: scoutingReport,
-        },
+          content: `Analyze this baseball player's performance and provide insights:\n\n${statsString}`
+        }
       ],
-      temperature: 0.2,
-      max_tokens: 400,
-    })
+      max_tokens: 250,
+      temperature: 0.7,
+    });
 
-    const content = response.choices[0]?.message?.content
-    if (!content) {
-      return NextResponse.json({ error: "No insights generated" }, { status: 500 })
-    }
+    const insights = response.choices[0]?.message?.content || "Unable to generate insights at this time.";
 
-    try {
-      const insights = JSON.parse(content)
-      return NextResponse.json(insights)
-    } catch (parseError) {
-      console.error("Failed to parse AI insights:", content)
-      return NextResponse.json({ error: "Failed to parse AI response" }, { status: 500 })
-    }
+    return NextResponse.json({
+      success: true,
+      insights,
+    });
   } catch (error) {
-    console.error("Insights API error:", error)
-    return NextResponse.json({ error: "Failed to generate insights" }, { status: 500 })
+    console.error("Error generating insights:", error);
+    return NextResponse.json(
+      {
+        error: "Failed to generate insights",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 }
+    );
   }
 }

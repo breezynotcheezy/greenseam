@@ -3,10 +3,10 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useDropzone } from "react-dropzone"
-import { Upload, FileText, Loader2, CheckCircle, AlertCircle, Zap, Key } from "lucide-react"
+import { Upload, FileText, Loader2, CheckCircle, AlertCircle, Zap } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"  
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -102,132 +102,120 @@ export function ImportPanel() {
   const isValid = acceptedFiles.length > 0 || (formData.rawText && formData.rawText.trim().length > 0)
 
   return (
-    <Card className="shadow-lg border-0 bg-white">
-      <CardHeader className="pb-6">
-        <CardTitle className="flex items-center gap-3 text-xl">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-forest-500 to-forest-600 flex items-center justify-center">
-            <Upload className="h-5 w-5 text-white" />
-          </div>
-          Import GameChanger Data
-        </CardTitle>
-        <div className="flex items-center gap-2 mt-2">
-          <Zap className="h-4 w-4 text-yellow-500" />
-          <span className="text-sm text-gray-600">Powered by fine-tuned AI model</span>
-          <Key className="h-4 w-4 text-blue-500" />
-          <span className="text-sm text-blue-600">Requires OpenAI API Key</span>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-8">
-        {/* File Dropzone */}
-        <div>
-          <Label className="text-base font-medium text-gray-900 mb-3 block">Upload GameChanger File</Label>
-          <div
-            {...getRootProps()}
-            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200 ${
-              isDragActive
-                ? "border-forest-400 bg-forest-50"
-                : acceptedFiles.length > 0
-                  ? "border-green-400 bg-green-50"
-                  : "border-gray-300 hover:border-forest-400 hover:bg-forest-50"
-            }`}
-          >
-            <input {...getInputProps()} />
-            {acceptedFiles.length > 0 ? (
-              <div className="space-y-3">
-                <CheckCircle className="h-12 w-12 mx-auto text-green-600" />
-                <div>
-                  <p className="font-medium text-green-800">{acceptedFiles[0].name}</p>
-                  <p className="text-sm text-green-600">Ready for AI processing</p>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <FileText className="h-12 w-12 mx-auto text-gray-400" />
-                {isDragActive ? (
-                  <p className="text-forest-600 font-medium">Drop the GameChanger file here...</p>
-                ) : (
+    <Card className="shadow-md border border-gray-100 bg-white overflow-hidden">
+      <CardContent className="p-6">
+        <div className="space-y-6">
+          {/* File Dropzone */}
+          <div>
+            <Label className="text-base font-medium text-gray-900 mb-2 block">Upload GameChanger File</Label>
+            <div
+              {...getRootProps()}
+              className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all duration-200 ${
+                isDragActive
+                  ? "border-forest-400 bg-forest-50"
+                  : acceptedFiles.length > 0
+                    ? "border-green-400 bg-green-50"
+                    : "border-gray-200 hover:border-forest-400 hover:bg-forest-50"
+              }`}
+            >
+              <input {...getInputProps()} />
+              {acceptedFiles.length > 0 ? (
+                <div className="space-y-2">
+                  <CheckCircle className="h-10 w-10 mx-auto text-green-600" />
                   <div>
-                    <p className="font-medium text-gray-900">Drop GameChanger files here or click to browse</p>
-                    <p className="text-sm text-gray-500 mt-1">Supports .txt, .csv, .xlsx files</p>
+                    <p className="font-medium text-green-800">{acceptedFiles[0].name}</p>
+                    <p className="text-sm text-green-600">Ready for processing</p>
                   </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <FileText className="h-10 w-10 mx-auto text-gray-400" />
+                  {isDragActive ? (
+                    <p className="text-forest-600 font-medium">Drop the file here...</p>
+                  ) : (
+                    <div>
+                      <p className="font-medium text-gray-900">Drop files here or click to browse</p>
+                      <p className="text-sm text-gray-500 mt-1">Supports .txt, .csv, .xlsx files</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Raw Text Input */}
+          <div>
+            <Label htmlFor="rawText" className="text-base font-medium text-gray-900 mb-2 block">
+              Or Paste GameChanger Data
+            </Label>
+            <Textarea
+              id="rawText"
+              placeholder="Paste your GameChanger play-by-play data here..."
+              className="h-32 resize-none border-gray-200 focus:border-forest-500 focus:ring-forest-500"
+              value={formData.rawText || ""}
+              onChange={(e) => setFormData((prev) => ({ ...prev, rawText: e.target.value }))}
+            />
+          </div>
+
+          {/* Settings */}
+          <div className="grid gap-6 md:grid-cols-2">
+            <div>
+              <Label className="text-base font-medium text-gray-900 mb-2 block">
+                Processing Chunk Size: {formData.chunkSize} tokens
+              </Label>
+              <Slider
+                value={[formData.chunkSize]}
+                onValueChange={([value]) => setFormData((prev) => ({ ...prev, chunkSize: value }))}
+                min={800}
+                max={2000}
+                step={100}
+                className="mt-2"
+              />
+              <p className="text-sm text-gray-500 mt-2">Optimized for model (1500 tokens recommended)</p>
+            </div>
+
+            <div>
+              <Label htmlFor="teamOverride" className="text-base font-medium text-gray-900 mb-2 block">
+                Team Name Override
+              </Label>
+              <Input
+                id="teamOverride"
+                placeholder="Optional team name..."
+                value={formData.teamOverride || ""}
+                onChange={(e) => setFormData((prev) => ({ ...prev, teamOverride: e.target.value }))}
+                className="border-gray-200 focus:border-forest-500 focus:ring-forest-500"
+              />
+              <p className="text-sm text-gray-500 mt-2">Leave blank to auto-detect from file</p>
+            </div>
+          </div>
+
+          {/* Submit Button */}
+          <Button
+            onClick={handleSubmit}
+            disabled={!isValid || loading}
+            className="w-full h-11 text-base bg-forest-600 hover:bg-forest-700 text-white"
+            size="lg"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Processing...
+              </>
+            ) : (
+              <>
+                <Zap className="h-4 w-4 mr-2" />
+                Parse Data
+              </>
             )}
-          </div>
-        </div>
+          </Button>
 
-        {/* Raw Text Input */}
-        <div>
-          <Label htmlFor="rawText" className="text-base font-medium text-gray-900 mb-3 block">
-            Or Paste GameChanger Data
-          </Label>
-          <Textarea
-            id="rawText"
-            placeholder="Paste your GameChanger play-by-play data here..."
-            className="h-32 resize-none border-gray-300 focus:border-forest-500 focus:ring-forest-500"
-            value={formData.rawText || ""}
-            onChange={(e) => setFormData((prev) => ({ ...prev, rawText: e.target.value }))}
-          />
-        </div>
-
-        {/* Settings */}
-        <div className="grid gap-6 md:grid-cols-2">
-          <div>
-            <Label className="text-base font-medium text-gray-900 mb-3 block">
-              Processing Chunk Size: {formData.chunkSize} tokens
-            </Label>
-            <Slider
-              value={[formData.chunkSize]}
-              onValueChange={([value]) => setFormData((prev) => ({ ...prev, chunkSize: value }))}
-              min={800}
-              max={2000}
-              step={100}
-              className="mt-2"
-            />
-            <p className="text-sm text-gray-500 mt-2">Optimized for fine-tuned model (1500 tokens recommended)</p>
-          </div>
-
-          <div>
-            <Label htmlFor="teamOverride" className="text-base font-medium text-gray-900 mb-3 block">
-              Team Name Override
-            </Label>
-            <Input
-              id="teamOverride"
-              placeholder="Optional team name..."
-              value={formData.teamOverride || ""}
-              onChange={(e) => setFormData((prev) => ({ ...prev, teamOverride: e.target.value }))}
-              className="border-gray-300 focus:border-forest-500 focus:ring-forest-500"
-            />
-            <p className="text-sm text-gray-500 mt-2">Leave blank to auto-detect from file</p>
-          </div>
-        </div>
-
-        {/* Submit Button */}
-        <Button
-          onClick={handleSubmit}
-          disabled={!isValid || loading}
-          className="w-full h-12 text-lg bg-forest-600 hover:bg-forest-700 text-white"
-          size="lg"
-        >
-          {loading ? (
-            <>
-              <Loader2 className="h-5 w-5 mr-3 animate-spin" />
-              Processing with AI...
-            </>
-          ) : (
-            <>
-              <Zap className="h-5 w-5 mr-3" />
-              Parse with Fine-Tuned AI
-            </>
+          {!isValid && (
+            <div className="flex items-center gap-2 text-amber-600 bg-amber-50 p-3 rounded-md border border-amber-200">
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+              <p className="text-sm">Please upload a file or paste data to continue</p>
+            </div>
           )}
-        </Button>
-
-        {!isValid && (
-          <div className="flex items-center gap-2 text-amber-600 bg-amber-50 p-3 rounded-lg">
-            <AlertCircle className="h-4 w-4" />
-            <p className="text-sm">Please upload a GameChanger file or paste data to continue</p>
-          </div>
-        )}
+        </div>
       </CardContent>
     </Card>
   )

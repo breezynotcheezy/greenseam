@@ -42,18 +42,16 @@ export function RecentUploadsPanel() {
   }
 
   return (
-    <Card className="shadow-lg border-0 bg-white h-fit">
-      <CardHeader className="pb-4">
-        <CardTitle className="flex items-center gap-3 text-lg">
-          <div className="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center">
-            <Clock className="h-4 w-4 text-blue-600" />
-          </div>
+    <Card className="shadow-md border border-gray-100 bg-white h-fit">
+      <CardHeader className="p-6 pb-3">
+        <CardTitle className="flex items-center gap-2 text-lg font-semibold">
+          <Clock className="h-4 w-4 text-blue-600" />
           Recent Imports
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-6 pt-3">
         {loading ? (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-2" />
@@ -62,18 +60,18 @@ export function RecentUploadsPanel() {
             ))}
           </div>
         ) : uploads.length === 0 ? (
-          <div className="text-center py-8">
-            <FileText className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+          <div className="text-center py-6">
+            <FileText className="h-10 w-10 mx-auto mb-2 text-gray-300" />
             <p className="text-gray-500 text-sm">No imports yet</p>
             <p className="text-gray-400 text-xs mt-1">Your recent uploads will appear here</p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {uploads.slice(0, 5).map((upload) => (
-              <div key={upload.id} className="p-3 bg-gray-50 rounded-lg">
-                <div className="flex items-start justify-between mb-2">
+              <div key={upload.id} className="p-3 bg-gray-50 rounded-md border border-gray-100">
+                <div className="flex items-start justify-between mb-1">
                   <p className="font-medium text-sm text-gray-900 truncate flex-1">{upload.filename}</p>
-                  <Badge variant="secondary" className="text-xs ml-2">
+                  <Badge variant="secondary" className="text-xs ml-2 font-normal">
                     {formatDate(upload.createdAt)}
                   </Badge>
                 </div>
