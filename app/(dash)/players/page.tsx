@@ -422,15 +422,6 @@ export default function PlayersPage() {
                 />
               </div>
 
-              {/* Test Player Card - Compact and Inline */}
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-medium text-gray-500">Test Card (For Reference)</h3>
-                <Badge variant="outline" className="text-xs">Example</Badge>
-              </div>
-              <div className="max-w-xs mx-auto">
-                <TestPlayerCard />
-              </div>
-
               {/* Filters */}
               {showFilters && (
                 <div className="grid gap-4 md:grid-cols-3 pt-4 border-t">
@@ -492,17 +483,13 @@ export default function PlayersPage() {
               ))}
             </Masonry>
           ) : (
-            <Card className="shadow-sm border-0 bg-white">
-              <CardContent className="text-center py-12">
-                <div className="text-gray-400 mb-4">
-                  <Users className="h-16 w-16 mx-auto" />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[...Array(6)].map((_, i) => (
+                <div key={i}>
+                  <TestPlayerCard />
                 </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Test Mode Active</h3>
-                <p className="text-gray-600">
-                  Displaying test player cards for demonstration purposes
-                </p>
-              </CardContent>
-            </Card>
+              ))}
+            </div>
           )}
         </div>
       </main>

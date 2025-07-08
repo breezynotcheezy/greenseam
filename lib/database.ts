@@ -46,11 +46,19 @@ export interface PlayerStats {
   homeRuns: number
 }
 
+export interface ImportResult {
+  inserted: number
+  newPlayers: number
+  updatedPlayers: number
+  teamName: string
+}
+
 // In-memory storage
 class Database {
   private teams: Map<string, Team> = new Map()
   private players: Map<string, Player> = new Map()
   private plateAppearances: Map<string, PlateAppearance> = new Map()
+  private lastImport: ImportResult | null = null
 
   // Team operations
   upsertTeam(team: Omit<Team, "id"> & { id?: string }): Team {
@@ -100,6 +108,10 @@ class Database {
     return this.players.get(id)
   }
 
+  getPlayerByCanonical(canonical: string): Player | undefined {
+    return Array.from(this.players.values()).find((p) => p.canonical === canonical)
+  }
+
   // Plate appearance operations
   addPlateAppearance(pa: Omit<PlateAppearance, "id">): PlateAppearance {
     const id = this.generateId()
@@ -111,6 +123,179 @@ class Database {
   getPlateAppearances(playerId?: string): PlateAppearance[] {
     const pas = Array.from(this.plateAppearances.values())
     return playerId ? pas.filter((pa) => pa.playerId === playerId) : pas
+  }
+
+  // Process imported data and merge with existing records
+  processImportedData(
+    plays: Array<{
+      playerName: string;
+      result: string;
+      bbType?: string;
+      gameDate?: string;
+      inning?: number;
+      count?: string;
+      situation?: string;
+    }>,
+    teamName: string
+  ): ImportResult {
+    // Create or get team
+    const team = this.upsertTeam({
+      name: teamName,
+      color: `#${Math.floor(Math.random() * 16777215).toString(16)}`,
+      emoji: ["⚾", "🏟️", "🥎", "🏆"][Math.floor(Math.random() * 4)],
+    });
+
+    let totalInserted = 0;
+    let newPlayersCount = 0;
+    let updatedPlayersCount = 0;
+    const processedPlayers = new Set<string>();
+
+    for (const play of plays) {
+      if (!play.playerName || !play.result) continue;
+
+      try {
+        // Normalize player name
+        const canonical = this.normalizePlayerName(play.playerName);
+        
+        // Check if player exists
+        let player = this.getPlayerByCanonical(canonical);
+        const isNewPlayer = !player;
+        
+        // Create or update player
+        player = this.upsertPlayer({
+          name: play.playerName,
+          canonical,
+          teamId: team.id,
+        });
+
+        if (isNewPlayer) {
+          newPlayersCount++;
+        } else if (!processedPlayers.has(canonical)) {
+          updatedPlayersCount++;
+        }
+        
+        processedPlayers.add(canonical);
+
+        // Add plate appearance
+        this.addPlateAppearance({
+          playerId: player.id,
+          result: this.normalizeOutcome(play.result),
+          bbType: play.bbType ? this.normalizeBallType(play.bbType) : undefined,
+          gameDate: play.gameDate || new Date().toISOString().split("T")[0],
+          inning: play.inning,
+          count: play.count,
+          situation: play.situation,
+        });
+
+        totalInserted++;
+      } catch (error) {
+        console.error("Error processing play:", error, play);
+      }
+    }
+
+    const result = {
+      inserted: totalInserted,
+      newPlayers: newPlayersCount,
+      updatedPlayers: updatedPlayersCount,
+      teamName: team.name,
+    };
+
+    this.lastImport = result;
+    return result;
+  }
+
+  // Helper methods for data normalization
+  private normalizePlayerName(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  private normalizeOutcome(result: string): string {
+    const OUTCOME_MAP: Record<string, string> = {
+      // Hits
+      single: "Hit",
+      double: "Hit",
+      triple: "Hit",
+      "home run": "Hit",
+      homerun: "Hit",
+      hr: "Hit",
+      "1b": "Hit",
+      "2b": "Hit",
+      "3b": "Hit",
+      hit: "Hit",
+    
+      // Outs
+      out: "Out",
+      groundout: "Out",
+      flyout: "Out",
+      lineout: "Out",
+      "pop out": "Out",
+      "ground out": "Out",
+      "fly out": "Out",
+      "line out": "Out",
+      "foul out": "Out",
+    
+      // Strikeouts
+      strikeout: "K",
+      "strike out": "K",
+      k: "K",
+      so: "K",
+      "struck out": "K",
+    
+      // Walks
+      walk: "Walk",
+      bb: "Walk",
+      "base on balls": "Walk",
+      walked: "Walk",
+    
+      // Hit by pitch
+      hbp: "HBP",
+      "hit by pitch": "HBP",
+    
+      // Fielder's choice
+      "fielders choice": "Out",
+      "fielder's choice": "Out",
+      fc: "Out",
+    
+      // Sacrifice
+      "sac fly": "Out",
+      "sacrifice fly": "Out",
+      "sac bunt": "Out",
+      "sacrifice bunt": "Out",
+    };
+
+    const normalized = result.toLowerCase().trim();
+    return OUTCOME_MAP[normalized] || result;
+  }
+
+  private normalizeBallType(bbType: string): string | undefined {
+    if (!bbType) return undefined;
+    
+    const BALL_TYPE_MAP: Record<string, string> = {
+      ground: "Ground",
+      fly: "Fly",
+      line: "Line",
+      popup: "Fly",
+      "pop up": "Fly",
+      grounder: "Ground",
+      "ground ball": "Ground",
+      "fly ball": "Fly",
+      "line drive": "Line",
+      liner: "Line",
+      "2b": "2B",
+      "3b": "3B",
+      hr: "HR",
+      "home run": "HR",
+      double: "2B",
+      triple: "3B",
+      homerun: "HR",
+    };
+    
+    const normalized = bbType.toLowerCase().trim();
+    return BALL_TYPE_MAP[normalized] || bbType;
   }
 
   // Calculate player stats
@@ -168,11 +353,17 @@ class Database {
     return stats
   }
 
+  // Get last import result
+  getLastImport(): ImportResult | null {
+    return this.lastImport;
+  }
+
   // Clear all data
   clear(): void {
     this.teams.clear()
     this.players.clear()
     this.plateAppearances.clear()
+    this.lastImport = null
   }
 
   // Get database stats

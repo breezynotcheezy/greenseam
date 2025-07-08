@@ -303,14 +303,7 @@ export default function HittersPage() {
         </div>
       </div>
 
-      {/* Test hitter card - Compact and Inline */}
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-medium text-gray-500">Test Card (For Reference)</h3>
-        <Badge variant="outline" className="text-xs">Example</Badge>
-      </div>
-      <div className="max-w-xs mx-auto mb-4">
-        <TestHitterCard />
-      </div>
+      {/* Remove test hitter card section */}
 
       {/* Results */}
       <div className="flex justify-between items-center">
@@ -337,17 +330,13 @@ export default function HittersPage() {
           ))}
         </Masonry>
       ) : (
-        <Card className="shadow-sm border-0 bg-white">
-          <CardContent className="text-center py-12">
-            <div className="text-gray-400 mb-4">
-              <Users className="h-16 w-16 mx-auto" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {[...Array(8)].map((_, i) => (
+            <div key={i}>
+              <TestHitterCard />
             </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Test Mode Active</h3>
-            <p className="text-gray-600">
-              Displaying test hitter cards for demonstration purposes
-            </p>
-          </CardContent>
-        </Card>
+          ))}
+        </div>
       )}
 
       {/* FAB Refresh Button */}
