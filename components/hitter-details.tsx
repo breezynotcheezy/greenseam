@@ -4,6 +4,15 @@ import { useState, useEffect } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { Loader2, AlertCircle } from "lucide-react"
 
 interface HitterDetailsProps {
@@ -30,6 +39,7 @@ interface Prediction {
 export function HitterDetails({ hitter }: HitterDetailsProps) {
   const [prediction, setPrediction] = useState<Prediction | null>(null)
   const [loading, setLoading] = useState(false)
+  const [plateAppearances, setPlateAppearances] = useState<any[]>([])
 
   useEffect(() => {
     const fetchPrediction = async () => {
@@ -50,6 +60,22 @@ export function HitterDetails({ hitter }: HitterDetailsProps) {
     fetchPrediction()
   }, [hitter.id])
 
+  useEffect(() => {
+    const fetchPA = async () => {
+      try {
+        const res = await fetch(`/api/plate-appearances?id=${hitter.id}`)
+        if (res.ok) {
+          const data = await res.json()
+          setPlateAppearances(data)
+        }
+      } catch (err) {
+        console.error("Failed to fetch plate appearances:", err)
+      }
+    }
+
+    fetchPA()
+  }, [hitter.id])
+
   const insights = [
     `Batting average of ${hitter.avg} indicates ${Number.parseFloat(hitter.avg) > 0.3 ? "strong" : "developing"} contact ability`,
     `${hitter.kRate}% strikeout rate is ${hitter.kRate < 20 ? "excellent" : hitter.kRate < 25 ? "good" : "concerning"}`,
@@ -60,10 +86,11 @@ export function HitterDetails({ hitter }: HitterDetailsProps) {
   return (
     <div className="mt-6">
       <Tabs defaultValue="prediction" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="prediction">Prediction</TabsTrigger>
           <TabsTrigger value="insights">Insights</TabsTrigger>
           <TabsTrigger value="spray">Spray</TabsTrigger>
+          <TabsTrigger value="data">Data</TabsTrigger>
         </TabsList>
 
         <TabsContent value="prediction" className="space-y-4">
@@ -146,6 +173,49 @@ export function HitterDetails({ hitter }: HitterDetailsProps) {
               <p className="text-xs text-muted-foreground mt-1">Heat map visualization coming soon</p>
             </div>
           </div>
+        </TabsContent>
+
+        <TabsContent value="data" className="space-y-4">
+          {plateAppearances.length > 0 ? (
+            <div className="space-y-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Result</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Inning</TableHead>
+                    <TableHead>Count</TableHead>
+                    <TableHead>Situation</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {plateAppearances.map((pa) => (
+                    <TableRow key={pa.id}>
+                      <TableCell>{pa.gameDate}</TableCell>
+                      <TableCell>{pa.result}</TableCell>
+                      <TableCell>{pa.bbType || ""}</TableCell>
+                      <TableCell>{pa.inning ?? ""}</TableCell>
+                      <TableCell>{pa.count ?? ""}</TableCell>
+                      <TableCell>{pa.situation ?? ""}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  window.open(
+                    `/api/plate-appearances?id=${hitter.id}&format=csv`
+                  )
+                }
+              >
+                Download CSV
+              </Button>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No data available.</p>
+          )}
         </TabsContent>
       </Tabs>
     </div>
