@@ -1,15 +1,24 @@
 "use client"
 
-import { Progress } from "@/components/ui/progress"
-import { Badge } from "@/components/ui/badge"
-
 interface PlayerStatsProps {
   player: {
+    id: string
+    name: string
+    team: {
+      id: string
+      name: string
+      color?: string
+      emoji?: string
+    }
+    paCount: number
     avg: string
+    kRate: number
+    gbPercent: number
+    ldPercent: number
+    fbPercent: number
     obp: string
     slg: string
     ops: string
-    kRate: number
     bbRate: number
     hits: number
     walks: number
@@ -17,86 +26,96 @@ interface PlayerStatsProps {
     doubles: number
     triples: number
     homeRuns: number
-    paCount: number
   }
 }
 
 export function PlayerStats({ player }: PlayerStatsProps) {
-  const stats = [
-    { label: "Batting Average", value: player.avg, color: "bg-green-500" },
-    { label: "On-Base Percentage", value: player.obp, color: "bg-blue-500" },
-    { label: "Slugging Percentage", value: player.slg, color: "bg-purple-500" },
-    { label: "OPS", value: player.ops, color: "bg-orange-500" },
-  ]
-
-  const rates = [
-    { label: "Strikeout Rate", value: player.kRate, max: 40, color: "bg-red-500" },
-    { label: "Walk Rate", value: player.bbRate, max: 20, color: "bg-green-500" },
-  ]
+  // Calculate derived stats
+  const atBats = player.paCount - player.walks;
+  const singles = player.hits - (player.doubles + player.triples + player.homeRuns);
+  const totalBases = singles + (2 * player.doubles) + (3 * player.triples) + (4 * player.homeRuns);
 
   return (
-    <div className="bg-blue-50 rounded-lg p-4 space-y-4">
-      {/* Slash Line */}
-      <div>
-        <h4 className="font-semibold text-gray-900 mb-3">Slash Line</h4>
-        <div className="grid grid-cols-2 gap-3">
-          {stats.map((stat) => (
-            <div key={stat.label} className="bg-white rounded-lg p-3">
-              <div className="text-lg font-bold text-gray-900">{stat.value}</div>
-              <div className="text-xs text-gray-600">{stat.label}</div>
-            </div>
-          ))}
+    <div className="space-y-6">
+      {/* Main Stats */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-muted rounded-md p-3 text-center">
+          <div className="text-2xl font-semibold">{player.avg}</div>
+          <div className="text-xs text-muted-foreground">AVG</div>
+        </div>
+        <div className="bg-muted rounded-md p-3 text-center">
+          <div className="text-2xl font-semibold">{player.obp}</div>
+          <div className="text-xs text-muted-foreground">OBP</div>
+        </div>
+        <div className="bg-muted rounded-md p-3 text-center">
+          <div className="text-2xl font-semibold">{player.slg}</div>
+          <div className="text-xs text-muted-foreground">SLG</div>
         </div>
       </div>
-
-      {/* Rates */}
+      
+      {/* Secondary Stats */}
       <div>
-        <h4 className="font-semibold text-gray-900 mb-3">Plate Discipline</h4>
-        <div className="space-y-3">
-          {rates.map((rate) => (
-            <div key={rate.label}>
-              <div className="flex justify-between items-center mb-1">
-                <span className="text-sm font-medium text-gray-700">{rate.label}</span>
-                <span className="text-sm font-semibold text-gray-900">{rate.value.toFixed(1)}%</span>
-              </div>
-              <Progress value={(rate.value / rate.max) * 100} className="h-2" />
-            </div>
-          ))}
+        <h3 className="text-sm font-medium mb-2">Batting Stats</h3>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Plate Appearances:</span>
+            <span>{player.paCount}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">At Bats:</span>
+            <span>{atBats}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Hits:</span>
+            <span>{player.hits}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Walks:</span>
+            <span>{player.walks}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Strikeouts:</span>
+            <span>{player.strikeouts}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Total Bases:</span>
+            <span>{totalBases}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">OPS:</span>
+            <span>{player.ops}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">K Rate:</span>
+            <span>{player.kRate.toFixed(1)}%</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">BB Rate:</span>
+            <span>{player.bbRate.toFixed(1)}%</span>
+          </div>
         </div>
       </div>
-
-      {/* Counting Stats */}
+      
+      {/* Hit Breakdown */}
       <div>
-        <h4 className="font-semibold text-gray-900 mb-3">Counting Stats</h4>
-        <div className="grid grid-cols-3 gap-2">
-          <div className="text-center">
-            <div className="text-lg font-bold text-green-600">{player.hits}</div>
-            <div className="text-xs text-gray-600">Hits</div>
+        <h3 className="text-sm font-medium mb-2">Hit Breakdown</h3>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Singles:</span>
+            <span>{singles}</span>
           </div>
-          <div className="text-center">
-            <div className="text-lg font-bold text-blue-600">{player.walks}</div>
-            <div className="text-xs text-gray-600">Walks</div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Doubles:</span>
+            <span>{player.doubles}</span>
           </div>
-          <div className="text-center">
-            <div className="text-lg font-bold text-red-600">{player.strikeouts}</div>
-            <div className="text-xs text-gray-600">Strikeouts</div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Triples:</span>
+            <span>{player.triples}</span>
           </div>
-        </div>
-      </div>
-
-      {/* Extra Base Hits */}
-      <div>
-        <h4 className="font-semibold text-gray-900 mb-3">Extra Base Hits</h4>
-        <div className="flex gap-2">
-          <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
-            {player.doubles} 2B
-          </Badge>
-          <Badge variant="secondary" className="bg-orange-100 text-orange-800">
-            {player.triples} 3B
-          </Badge>
-          <Badge variant="secondary" className="bg-red-100 text-red-800">
-            {player.homeRuns} HR
-          </Badge>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Home Runs:</span>
+            <span>{player.homeRuns}</span>
+          </div>
         </div>
       </div>
     </div>

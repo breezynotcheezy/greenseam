@@ -1,16 +1,14 @@
 import { z } from "zod"
 
-export const importFormSchema = z
-  .object({
-    file: z.instanceof(File).optional(),
-    rawText: z.string().optional(),
-    teamOverride: z.string().optional(),
-    chunkSize: z.number().min(500).max(3000).default(2000),
-  })
-  .refine((data) => data.file || (data.rawText && data.rawText.trim().length > 0), {
-    message: "Either a file or raw text must be provided",
-    path: ["file"],
-  })
+export const importFormSchema = z.object({
+  file: z.any().optional(), // Change from File instance check to any since File is not available during validation
+  rawText: z.string().optional(),
+  teamOverride: z.string().optional(),
+  chunkSize: z.number().min(1000).max(8000).default(4000),
+}).refine(data => data.file || (data.rawText && data.rawText.trim().length > 0), {
+  message: "Either a file or raw text must be provided",
+  path: ["file"],
+})
 
 export type ImportFormData = z.infer<typeof importFormSchema>
 

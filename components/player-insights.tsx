@@ -26,12 +26,12 @@ export function PlayerInsights({ playerId }: PlayerInsightsProps) {
       setError(null)
       try {
         const response = await fetch(`/api/insights?id=${playerId}`)
-        const data = await response.json()
-
         if (!response.ok) {
-          throw new Error(data.error || "Failed to fetch insights")
+          const errorData = await response.json()
+          throw new Error(errorData.error || "Failed to fetch insights")
         }
-
+        
+        const data = await response.json()
         setInsights(data)
       } catch (error) {
         console.error("Failed to fetch insights:", error)
@@ -49,7 +49,7 @@ export function PlayerInsights({ playerId }: PlayerInsightsProps) {
       <div className="bg-purple-50 rounded-lg p-6">
         <div className="flex items-center justify-center">
           <Loader2 className="h-6 w-6 animate-spin text-purple-600" />
-          <span className="ml-3 text-purple-700">Analyzing player data with AI...</span>
+          <span className="ml-3 text-purple-700">Analyzing opponent data with AI...</span>
         </div>
       </div>
     )
@@ -85,22 +85,22 @@ export function PlayerInsights({ playerId }: PlayerInsightsProps) {
 
   return (
     <div className="bg-purple-50 rounded-lg p-4 space-y-4">
-      {/* Single AI Insight */}
+      {/* Weakness Insight */}
       <div>
         <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
           <Brain className="h-4 w-4 text-purple-600" />
-          AI Insight
+          Opponent Weakness
         </h4>
         <div className="bg-white rounded-lg p-4 border border-purple-200">
           <p className="text-sm text-gray-800 font-medium">{insights.insight}</p>
         </div>
       </div>
 
-      {/* Single Recommendation */}
+      {/* Tactical Recommendation */}
       <div>
         <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
           <Target className="h-4 w-4 text-blue-600" />
-          Coaching Recommendation
+          Tactical Approach
         </h4>
         <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
           <p className="text-sm text-blue-800 font-medium">{insights.recommendation}</p>
@@ -111,12 +111,12 @@ export function PlayerInsights({ playerId }: PlayerInsightsProps) {
       <div className="grid grid-cols-2 gap-4">
         <div>
           <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            Strengths
+            <CheckCircle className="h-4 w-4 text-amber-600" />
+            Be Cautious Of
           </h4>
           <div className="space-y-1">
             {insights.strengths.map((strength, index) => (
-              <Badge key={index} variant="secondary" className="bg-green-100 text-green-800 block w-fit">
+              <Badge key={index} variant="secondary" className="bg-amber-100 text-amber-800 block w-fit">
                 {strength}
               </Badge>
             ))}
@@ -125,12 +125,12 @@ export function PlayerInsights({ playerId }: PlayerInsightsProps) {
 
         <div>
           <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-            <XCircle className="h-4 w-4 text-red-600" />
-            Areas to Improve
+            <XCircle className="h-4 w-4 text-green-600" />
+            Exploit These
           </h4>
           <div className="space-y-1">
             {insights.weaknesses.map((weakness, index) => (
-              <Badge key={index} variant="secondary" className="bg-red-100 text-red-800 block w-fit">
+              <Badge key={index} variant="secondary" className="bg-green-100 text-green-800 block w-fit">
                 {weakness}
               </Badge>
             ))}

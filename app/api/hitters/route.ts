@@ -1,5 +1,11 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/database"
+
+// Format stat with leading zero and 3 decimal places
+function formatStat(value: number): string {
+  const formatted = value.toFixed(3)
+  return value < 1 ? formatted.substring(1) : formatted
+}
 
 export const runtime = "nodejs"
 
@@ -22,14 +28,14 @@ export async function GET(request: NextRequest) {
       name: stat.name,
       team: stat.team,
       paCount: stat.paCount,
-      avg: stat.avg.toFixed(3),
+      avg: formatStat(stat.avg),
       kRate: Math.round(stat.kRate),
       gbPercent: Math.round(stat.gbPercent),
       ldPercent: Math.round(stat.ldPercent),
       fbPercent: Math.round(stat.fbPercent),
-      obp: stat.obp.toFixed(3),
-      slg: stat.slg.toFixed(3),
-      ops: stat.ops.toFixed(3),
+      obp: formatStat(stat.obp),
+      slg: formatStat(stat.slg),
+      ops: formatStat(stat.ops),
       bbRate: Math.round(stat.bbRate),
       hits: stat.hits,
       walks: stat.walks,

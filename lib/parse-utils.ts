@@ -115,15 +115,218 @@ export interface ParsedPlay {
   location?: string
 }
 
-export function normalizeOutcome(result: string): string {
-  const normalized = result.toLowerCase().trim()
-  return OUTCOME_MAP[normalized as keyof typeof OUTCOME_MAP] || result
+// Utility functions for parsing GameChanger data
+
+/**
+ * Extracts player names from the top of the input text
+ * @param text The input text to parse
+ * @returns Array of player names found at the top
+ */
+export function extractPlayerNamesFromHeader(text: string): string[] {
+  // Look for player names at the top of the text, often in format "Name X, Number"
+  const lines = text.split('\n').slice(0, 30); // Look at first 30 lines
+  const playerNames: string[] = [];
+  
+  // Multiple patterns to match player listings at the top
+  const playerPatterns = [
+    /^([A-Za-z]+\s+[A-Za-z])[,\s]+(\d+)(?:\s*Remove filter)?$/,  // "Name X, 99"
+    /^([A-Za-z]+\s+[A-Za-z])[,\s]+#(\d+)(?:\s*Remove filter)?$/, // "Name X, #99"
+    /^(\d+)[,\s]+([A-Za-z]+\s+[A-Za-z])(?:\s*Remove filter)?$/,  // "99, Name X"
+    /^#(\d+)[,\s]+([A-Za-z]+\s+[A-Za-z])(?:\s*Remove filter)?$/, // "#99, Name X"
+    /^([A-Za-z]+\s+[A-Za-z])$/,                                  // Just "Name X"
+    /^Player:\s+([A-Za-z]+\s+[A-Za-z])$/,                        // "Player: Name X"
+    /^([A-Za-z]+\s+[A-Za-z]+\s+[A-Za-z])$/                       // "First Middle Last"
+  ];
+  
+  for (const line of lines) {
+    const trimmedLine = line.trim();
+    
+    // Skip empty lines
+    if (!trimmedLine) continue;
+    
+    // Check for section headers that indicate we're past the player list
+    if (trimmedLine.includes("Clear filter") || 
+        trimmedLine.includes("Chronological") ||
+        trimmedLine.includes("Date Range") ||
+        trimmedLine.includes("Game Log")) {
+      break;
+    }
+    
+    // Try each pattern
+    let matched = false;
+    for (const pattern of playerPatterns) {
+      const match = trimmedLine.match(pattern);
+      if (match) {
+        // Different patterns have the name in different capture groups
+        const name = match[1].includes(' ') ? match[1] : (match[2] || match[1]);
+        if (name && name.includes(' ')) { // Ensure it's a full name with space
+          playerNames.push(name.trim());
+          matched = true;
+          break;
+        }
+      }
+    }
+    
+    // If no pattern matched but the line has 2-3 words, it might be a name
+    if (!matched && /^[A-Za-z]+\s+[A-Za-z]+(\s+[A-Za-z]+)?$/.test(trimmedLine)) {
+      playerNames.push(trimmedLine);
+    }
+  }
+  
+  // Remove duplicates
+  return [...new Set(playerNames)];
 }
 
-export function normalizeBallType(bbType: string): string | undefined {
-  if (!bbType) return undefined
-  const normalized = bbType.toLowerCase().trim()
-  return BALL_TYPE_MAP[normalized as keyof typeof BALL_TYPE_MAP] || bbType
+/**
+ * Filter plays to only include those for specific players
+ * @param plays Array of parsed plays
+ * @param playerNames Array of player names to include
+ * @returns Filtered array of plays
+ */
+export function filterPlaysByPlayerNames(plays: ParsedPlay[], playerNames: string[]): ParsedPlay[] {
+  if (!playerNames || playerNames.length === 0) {
+    return plays;
+  }
+  
+  // Normalize all player names for better matching
+  const normalizedTargetNames = playerNames.map(name => normalizePlayerName(name));
+  
+  return plays.filter(play => {
+    if (!play.playerName) return false;
+    
+    const normalizedPlayName = normalizePlayerName(play.playerName);
+    
+    // Check if any of the normalized player names match
+    return normalizedTargetNames.some(targetName => {
+      // Check for exact match
+      if (normalizedPlayName === targetName) return true;
+      
+      // Check for partial matches (first name, last name, etc.)
+      const playNameParts = normalizedPlayName.split(' ');
+      const targetNameParts = targetName.split(' ');
+      
+      // If first and last names match
+      if (playNameParts[0] === targetNameParts[0] && 
+          playNameParts[playNameParts.length-1] === targetNameParts[targetNameParts.length-1]) {
+        return true;
+      }
+      
+      // If the play name contains the target name or vice versa
+      if (normalizedPlayName.includes(targetName) || targetName.includes(normalizedPlayName)) {
+        return true;
+      }
+      
+      return false;
+    });
+  });
+}
+
+/**
+ * Normalize player names for consistent comparison
+ * @param name The player name to normalize
+ * @returns Normalized player name
+ */
+export function normalizePlayerName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Normalize outcome strings to consistent values
+ * @param result The outcome string to normalize
+ * @returns Normalized outcome
+ */
+export function normalizeOutcome(result: string): string {
+  const OUTCOME_MAP: Record<string, string> = {
+    // Hits
+    single: "Hit",
+    double: "Hit",
+    triple: "Hit",
+    "home run": "Hit",
+    homerun: "Hit",
+    hr: "Hit",
+    "1b": "Hit",
+    "2b": "Hit",
+    "3b": "Hit",
+    hit: "Hit",
+  
+    // Outs
+    out: "Out",
+    groundout: "Out",
+    flyout: "Out",
+    lineout: "Out",
+    "pop out": "Out",
+    "ground out": "Out",
+    "fly out": "Out",
+    "line out": "Out",
+    "foul out": "Out",
+  
+    // Strikeouts
+    strikeout: "K",
+    "strike out": "K",
+    k: "K",
+    so: "K",
+    "struck out": "K",
+  
+    // Walks
+    walk: "Walk",
+    bb: "Walk",
+    "base on balls": "Walk",
+    walked: "Walk",
+  
+    // Hit by pitch
+    hbp: "HBP",
+    "hit by pitch": "HBP",
+  
+    // Fielder's choice
+    "fielders choice": "Out",
+    "fielder's choice": "Out",
+    fc: "Out",
+  
+    // Sacrifice
+    "sac fly": "Out",
+    "sacrifice fly": "Out",
+    "sac bunt": "Out",
+    "sacrifice bunt": "Out",
+  };
+
+  const normalized = result.toLowerCase().trim();
+  return OUTCOME_MAP[normalized] || result;
+}
+
+/**
+ * Normalize ball type strings to consistent values
+ * @param bbType The ball type string to normalize
+ * @returns Normalized ball type
+ */
+export function normalizeBallType(bbType: string | undefined): string | undefined {
+  if (!bbType) return undefined;
+  
+  const BALL_TYPE_MAP: Record<string, string> = {
+    ground: "Ground",
+    fly: "Fly",
+    line: "Line",
+    popup: "Fly",
+    "pop up": "Fly",
+    grounder: "Ground",
+    "ground ball": "Ground",
+    "fly ball": "Fly",
+    "line drive": "Line",
+    liner: "Line",
+    "2b": "2B",
+    "3b": "3B",
+    hr: "HR",
+    "home run": "HR",
+    double: "2B",
+    triple: "3B",
+    homerun: "HR",
+  };
+  
+  const normalized = bbType.toLowerCase().trim();
+  return BALL_TYPE_MAP[normalized] || bbType;
 }
 
 export function countTokens(text: string): number {
@@ -157,14 +360,6 @@ export function chunkText(text: string, maxTokens = 1500): string[] {
   }
 
   return chunks
-}
-
-export function normalizePlayerName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
 }
 
 // Enhanced GameChanger data extraction

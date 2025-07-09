@@ -60,6 +60,10 @@ class Database {
   private plateAppearances: Map<string, PlateAppearance> = new Map()
   private lastImport: ImportResult | null = null
 
+  constructor() {
+    // Database instance created
+  }
+
   // Team operations
   upsertTeam(team: Omit<Team, "id"> & { id?: string }): Team {
     const id = team.id || this.generateId()
@@ -138,6 +142,8 @@ class Database {
     }>,
     teamName: string
   ): ImportResult {
+    console.log(`Processing ${plays.length} plays for team: ${teamName}`)
+    
     // Create or get team
     const team = this.upsertTeam({
       name: teamName,
@@ -201,6 +207,7 @@ class Database {
     };
 
     this.lastImport = result;
+    console.log(`Import result:`, result)
     return result;
   }
 
@@ -307,14 +314,17 @@ class Database {
       const pas = this.getPlateAppearances(player.id)
       const team = this.getTeam(player.teamId)
 
-      if (pas.length < minPA || !team) continue
-
+      // Skip players with missing team
+      if (!team) continue;
+      
+      // Calculate stats
       const hits = pas.filter((pa) => pa.result === "Hit").length
       const walks = pas.filter((pa) => pa.result === "Walk").length
       const strikeouts = pas.filter((pa) => pa.result === "K").length
       const doubles = pas.filter((pa) => pa.result === "Hit" && pa.bbType === "2B").length
       const triples = pas.filter((pa) => pa.result === "Hit" && pa.bbType === "3B").length
       const homeRuns = pas.filter((pa) => pa.result === "Hit" && pa.bbType === "HR").length
+      const hbp = pas.filter((pa) => pa.result === "HBP").length
 
       const ballTypes = pas.filter((pa) => pa.bbType && ["Ground", "Line", "Fly"].includes(pa.bbType))
       const groundBalls = ballTypes.filter((pa) => pa.bbType === "Ground").length
@@ -322,10 +332,14 @@ class Database {
       const flyBalls = ballTypes.filter((pa) => pa.bbType === "Fly").length
       const totalBallTypes = groundBalls + lineDrives + flyBalls
 
-      const avg = pas.length > 0 ? hits / pas.length : 0
-      const obp = pas.length > 0 ? (hits + walks) / pas.length : 0
-      const totalBases = hits + doubles + triples * 2 + homeRuns * 3
-      const slg = pas.length > 0 ? totalBases / pas.length : 0
+      // Calculate at-bats (PA minus walks and HBP)
+      const atBats = pas.length - walks - hbp
+
+      // Calculate averages
+      const avg = atBats > 0 ? hits / atBats : 0
+      const obp = pas.length > 0 ? (hits + walks + hbp) / pas.length : 0
+      const totalBases = hits + doubles + (2 * triples) + (3 * homeRuns)
+      const slg = atBats > 0 ? totalBases / atBats : 0
 
       stats.push({
         playerId: player.id,
@@ -350,7 +364,8 @@ class Database {
       })
     }
 
-    return stats
+    // Filter by minPA at the end
+    return minPA > 0 ? stats.filter(stat => stat.paCount >= minPA) : stats;
   }
 
   // Get last import result
@@ -380,5 +395,19 @@ class Database {
   }
 }
 
-// Singleton database instance
-export const db = new Database()
+// Use a global variable to ensure persistence across module reloads
+declare global {
+  var __database: Database | undefined
+}
+
+// Get or create the global database instance
+function getGlobalDatabase(): Database {
+  if (!global.__database) {
+    console.log("Creating new global database instance")
+    global.__database = new Database()
+  }
+  return global.__database
+}
+
+// Export the database instance
+export const db = getGlobalDatabase()
