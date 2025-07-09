@@ -1,4 +1,4 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import OpenAI from "openai"
 import { db } from "@/lib/database"
 
@@ -24,89 +24,138 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Player ID required" }, { status: 400 })
     }
 
+    // Get player and check if exists
     const player = db.getPlayer(playerId)
     if (!player) {
-      return NextResponse.json({ error: "Player not found" }, { status: 404 })
+      console.error(`Player not found with ID: ${playerId}`)
+      return NextResponse.json({ 
+        insight: "Player data not available",
+        recommendation: "Check if this player has sufficient data or try reimporting",
+        strengths: ["Unknown"],
+        weaknesses: ["Unknown"]
+      })
     }
 
+    // Get plate appearances and stats
     const plateAppearances = db.getPlateAppearances(playerId)
-    const stats = db.getPlayerStats().find((s) => s.playerId === playerId)
+    const stats = db.getPlayerStats(0).find((s) => s.playerId === playerId)
 
-    if (!stats) {
-      return NextResponse.json({ error: "Player stats not found" }, { status: 404 })
+    if (!stats || plateAppearances.length === 0) {
+      console.error(`Player stats not found for ID: ${playerId} (${player.name})`)
+      return NextResponse.json({ 
+        insight: "Insufficient data for this player",
+        recommendation: "Import more plate appearances for meaningful analysis",
+        strengths: ["Limited data"],
+        weaknesses: ["Sample size"]
+      })
     }
 
     // Prepare detailed scouting data with specific numbers
-    const recentPA = plateAppearances.slice(-15)
-    const situationalData = recentPA.map((pa) => ({
-      result: pa.result,
-      ballType: pa.bbType,
-      count: pa.count,
-      situation: pa.situation,
-      inning: pa.inning,
-    }))
-
+    const recentPA = plateAppearances.slice(-10)
+    const recentResults = recentPA.map(pa => pa.result)
+    
+    // Count recent outcomes
+    const recentHits = recentResults.filter(r => r === "Hit").length
+    const recentOuts = recentResults.filter(r => r === "Out").length
+    const recentKs = recentResults.filter(r => r === "K").length
+    const recentWalks = recentResults.filter(r => r === "Walk").length
+    
     const scoutingReport = `
-PLAYER ANALYSIS: ${player.name} (${stats.team.name})
+OPPONENT ANALYSIS: ${player.name} (${stats.team.name})
 
 CURRENT STATISTICS (${stats.paCount} PA):
 - Batting Average: ${stats.avg.toFixed(3)} (${stats.hits} hits in ${stats.paCount} PA)
+- On-base Percentage: ${stats.obp.toFixed(3)}
+- Slugging: ${stats.slg.toFixed(3)}
+- OPS: ${stats.ops.toFixed(3)}
 - Strikeout Rate: ${stats.kRate.toFixed(1)}% (${stats.strikeouts} strikeouts)
 - Walk Rate: ${stats.bbRate.toFixed(1)}% (${stats.walks} walks)
 - Ground Ball Rate: ${stats.gbPercent.toFixed(1)}%
 - Line Drive Rate: ${stats.ldPercent.toFixed(1)}%
 - Fly Ball Rate: ${stats.fbPercent.toFixed(1)}%
-- Extra Base Hits: ${stats.doubles} 2B, ${stats.triples} 3B, ${stats.homeRuns} HR
+- Extra Base Hits: ${stats.doubles} doubles, ${stats.triples} triples, ${stats.homeRuns} home runs
 
-LAST 15 PLATE APPEARANCES:
-${situationalData.map((pa, i) => `${i + 1}. ${pa.result}${pa.ballType ? ` (${pa.ballType})` : ""}${pa.count ? ` [${pa.count}]` : ""}`).join("\n")}
+RECENT PERFORMANCE (Last 10 PA):
+- Recent Hits: ${recentHits}
+- Recent Outs: ${recentOuts}
+- Recent Strikeouts: ${recentKs}
+- Recent Walks: ${recentWalks}
 `
 
-    const response = await openai.chat.completions.create({
-      model: "ft:gpt-3.5-turbo-1106:greenchanger:greenseam3:BqjZCdoJ",
-      messages: [
-        {
-          role: "system",
-          content: `You are a professional baseball scout. Based on the specific data provided, give:
-
-1. insight: ONE high-confidence observation using specific numbers from the data (1 sentence)
-2. recommendation: ONE specific, actionable coaching suggestion based on the data (1 sentence)
-3. strengths: Array of 2-4 key strengths (2-3 words each)
-4. weaknesses: Array of 1-3 areas for improvement (2-3 words each)
-
-Use ONLY the specific statistics provided. Be precise and reference actual numbers.
-
-Return ONLY valid JSON:
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `You are a professional baseball scout providing concise, high-confidence insights for coaches about OPPOSING players. 
+            
+Based on the opponent data provided, you must return ONLY valid JSON in the following format:
 {
-  "insight": "Single specific insight with numbers",
-  "recommendation": "Single specific coaching recommendation", 
+  "insight": "ONE specific, data-backed observation about this opponent's weakness using exact numbers from the stats (1 sentence)",
+  "recommendation": "ONE specific, actionable coaching suggestion to EXPLOIT this opponent's weakness (1 sentence)", 
   "strengths": ["strength1", "strength2"],
   "weaknesses": ["weakness1", "weakness2"]
-}`,
-        },
-        {
-          role: "user",
-          content: scoutingReport,
-        },
-      ],
-      temperature: 0.2,
-      max_tokens: 400,
-    })
+}
 
-    const content = response.choices[0]?.message?.content
-    if (!content) {
-      return NextResponse.json({ error: "No insights generated" }, { status: 500 })
-    }
+The insight must focus on the opponent's vulnerabilities.
+The recommendation must be a specific tactical approach to exploit the opponent's weakness.
+Strengths should be brief (2-3 words each) - what your team should be cautious about.
+Weaknesses should be brief (2-3 words each) - what your team should target.
+Use ONLY the statistics provided.`
+          },
+          {
+            role: "user",
+            content: scoutingReport,
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: 300,
+        response_format: { type: "json_object" }
+      })
 
-    try {
+      const content = response.choices[0]?.message?.content
+      if (!content) {
+        throw new Error("No insights generated")
+      }
+
+      // Parse the JSON response
       const insights = JSON.parse(content)
       return NextResponse.json(insights)
-    } catch (parseError) {
-      console.error("Failed to parse AI insights:", content)
-      return NextResponse.json({ error: "Failed to parse AI response" }, { status: 500 })
+    } catch (aiError) {
+      console.error("AI insights error:", aiError)
+      
+      // Fallback response with basic insights based on stats
+      let insight = "Opponent shows exploitable tendencies in their batting approach."
+      let recommendation = "Attack with pitches that counter their dominant ball contact pattern."
+      const strengths = ["Recent performance"]
+      const weaknesses = ["Predictable approach"]
+      
+      // Try to generate basic insights from stats
+      if (stats.kRate > 20) {
+        insight = `${player.name} has a high strikeout rate of ${stats.kRate.toFixed(1)}%.`
+        recommendation = "Attack with breaking balls and high fastballs to induce swings and misses."
+        weaknesses.push("High K-rate")
+      } else if (stats.gbPercent > 50) {
+        insight = `${player.name} hits ${stats.gbPercent.toFixed(1)}% ground balls.`
+        recommendation = "Position infielders strategically and induce ground balls with low pitches."
+        weaknesses.push("Ground ball heavy")
+      }
+      
+      return NextResponse.json({
+        insight,
+        recommendation,
+        strengths,
+        weaknesses
+      })
     }
   } catch (error) {
     console.error("Insights API error:", error)
-    return NextResponse.json({ error: "Failed to generate insights" }, { status: 500 })
+    return NextResponse.json({ 
+      insight: "Analysis currently unavailable",
+      recommendation: "Try again later or check player data",
+      strengths: ["Unknown"],
+      weaknesses: ["Unknown"]
+    })
   }
 }

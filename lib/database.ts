@@ -46,11 +46,23 @@ export interface PlayerStats {
   homeRuns: number
 }
 
+export interface ImportResult {
+  inserted: number
+  newPlayers: number
+  updatedPlayers: number
+  teamName: string
+}
+
 // In-memory storage
 class Database {
   private teams: Map<string, Team> = new Map()
   private players: Map<string, Player> = new Map()
   private plateAppearances: Map<string, PlateAppearance> = new Map()
+  private lastImport: ImportResult | null = null
+
+  constructor() {
+    // Database instance created
+  }
 
   // Team operations
   upsertTeam(team: Omit<Team, "id"> & { id?: string }): Team {
@@ -100,6 +112,10 @@ class Database {
     return this.players.get(id)
   }
 
+  getPlayerByCanonical(canonical: string): Player | undefined {
+    return Array.from(this.players.values()).find((p) => p.canonical === canonical)
+  }
+
   // Plate appearance operations
   addPlateAppearance(pa: Omit<PlateAppearance, "id">): PlateAppearance {
     const id = this.generateId()
@@ -113,6 +129,182 @@ class Database {
     return playerId ? pas.filter((pa) => pa.playerId === playerId) : pas
   }
 
+  // Process imported data and merge with existing records
+  processImportedData(
+    plays: Array<{
+      playerName: string;
+      result: string;
+      bbType?: string;
+      gameDate?: string;
+      inning?: number;
+      count?: string;
+      situation?: string;
+    }>,
+    teamName: string
+  ): ImportResult {
+    console.log(`Processing ${plays.length} plays for team: ${teamName}`)
+    
+    // Create or get team
+    const team = this.upsertTeam({
+      name: teamName,
+      color: `#${Math.floor(Math.random() * 16777215).toString(16)}`,
+      emoji: ["⚾", "🏟️", "🥎", "🏆"][Math.floor(Math.random() * 4)],
+    });
+
+    let totalInserted = 0;
+    let newPlayersCount = 0;
+    let updatedPlayersCount = 0;
+    const processedPlayers = new Set<string>();
+
+    for (const play of plays) {
+      if (!play.playerName || !play.result) continue;
+
+      try {
+        // Normalize player name
+        const canonical = this.normalizePlayerName(play.playerName);
+        
+        // Check if player exists
+        let player = this.getPlayerByCanonical(canonical);
+        const isNewPlayer = !player;
+        
+        // Create or update player
+        player = this.upsertPlayer({
+          name: play.playerName,
+          canonical,
+          teamId: team.id,
+        });
+
+        if (isNewPlayer) {
+          newPlayersCount++;
+        } else if (!processedPlayers.has(canonical)) {
+          updatedPlayersCount++;
+        }
+        
+        processedPlayers.add(canonical);
+
+        // Add plate appearance
+        this.addPlateAppearance({
+          playerId: player.id,
+          result: this.normalizeOutcome(play.result),
+          bbType: play.bbType ? this.normalizeBallType(play.bbType) : undefined,
+          gameDate: play.gameDate || new Date().toISOString().split("T")[0],
+          inning: play.inning,
+          count: play.count,
+          situation: play.situation,
+        });
+
+        totalInserted++;
+      } catch (error) {
+        console.error("Error processing play:", error, play);
+      }
+    }
+
+    const result = {
+      inserted: totalInserted,
+      newPlayers: newPlayersCount,
+      updatedPlayers: updatedPlayersCount,
+      teamName: team.name,
+    };
+
+    this.lastImport = result;
+    console.log(`Import result:`, result)
+    return result;
+  }
+
+  // Helper methods for data normalization
+  private normalizePlayerName(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  private normalizeOutcome(result: string): string {
+    const OUTCOME_MAP: Record<string, string> = {
+      // Hits
+      single: "Hit",
+      double: "Hit",
+      triple: "Hit",
+      "home run": "Hit",
+      homerun: "Hit",
+      hr: "Hit",
+      "1b": "Hit",
+      "2b": "Hit",
+      "3b": "Hit",
+      hit: "Hit",
+    
+      // Outs
+      out: "Out",
+      groundout: "Out",
+      flyout: "Out",
+      lineout: "Out",
+      "pop out": "Out",
+      "ground out": "Out",
+      "fly out": "Out",
+      "line out": "Out",
+      "foul out": "Out",
+    
+      // Strikeouts
+      strikeout: "K",
+      "strike out": "K",
+      k: "K",
+      so: "K",
+      "struck out": "K",
+    
+      // Walks
+      walk: "Walk",
+      bb: "Walk",
+      "base on balls": "Walk",
+      walked: "Walk",
+    
+      // Hit by pitch
+      hbp: "HBP",
+      "hit by pitch": "HBP",
+    
+      // Fielder's choice
+      "fielders choice": "Out",
+      "fielder's choice": "Out",
+      fc: "Out",
+    
+      // Sacrifice
+      "sac fly": "Out",
+      "sacrifice fly": "Out",
+      "sac bunt": "Out",
+      "sacrifice bunt": "Out",
+    };
+
+    const normalized = result.toLowerCase().trim();
+    return OUTCOME_MAP[normalized] || result;
+  }
+
+  private normalizeBallType(bbType: string): string | undefined {
+    if (!bbType) return undefined;
+    
+    const BALL_TYPE_MAP: Record<string, string> = {
+      ground: "Ground",
+      fly: "Fly",
+      line: "Line",
+      popup: "Fly",
+      "pop up": "Fly",
+      grounder: "Ground",
+      "ground ball": "Ground",
+      "fly ball": "Fly",
+      "line drive": "Line",
+      liner: "Line",
+      "2b": "2B",
+      "3b": "3B",
+      hr: "HR",
+      "home run": "HR",
+      double: "2B",
+      triple: "3B",
+      homerun: "HR",
+    };
+    
+    const normalized = bbType.toLowerCase().trim();
+    return BALL_TYPE_MAP[normalized] || bbType;
+  }
+
   // Calculate player stats
   getPlayerStats(minPA = 0): PlayerStats[] {
     const players = this.getPlayers()
@@ -122,14 +314,17 @@ class Database {
       const pas = this.getPlateAppearances(player.id)
       const team = this.getTeam(player.teamId)
 
-      if (pas.length < minPA || !team) continue
-
+      // Skip players with missing team
+      if (!team) continue;
+      
+      // Calculate stats
       const hits = pas.filter((pa) => pa.result === "Hit").length
       const walks = pas.filter((pa) => pa.result === "Walk").length
       const strikeouts = pas.filter((pa) => pa.result === "K").length
       const doubles = pas.filter((pa) => pa.result === "Hit" && pa.bbType === "2B").length
       const triples = pas.filter((pa) => pa.result === "Hit" && pa.bbType === "3B").length
       const homeRuns = pas.filter((pa) => pa.result === "Hit" && pa.bbType === "HR").length
+      const hbp = pas.filter((pa) => pa.result === "HBP").length
 
       const ballTypes = pas.filter((pa) => pa.bbType && ["Ground", "Line", "Fly"].includes(pa.bbType))
       const groundBalls = ballTypes.filter((pa) => pa.bbType === "Ground").length
@@ -137,10 +332,14 @@ class Database {
       const flyBalls = ballTypes.filter((pa) => pa.bbType === "Fly").length
       const totalBallTypes = groundBalls + lineDrives + flyBalls
 
-      const avg = pas.length > 0 ? hits / pas.length : 0
-      const obp = pas.length > 0 ? (hits + walks) / pas.length : 0
-      const totalBases = hits + doubles + triples * 2 + homeRuns * 3
-      const slg = pas.length > 0 ? totalBases / pas.length : 0
+      // Calculate at-bats (PA minus walks and HBP)
+      const atBats = pas.length - walks - hbp
+
+      // Calculate averages
+      const avg = atBats > 0 ? hits / atBats : 0
+      const obp = pas.length > 0 ? (hits + walks + hbp) / pas.length : 0
+      const totalBases = hits + doubles + (2 * triples) + (3 * homeRuns)
+      const slg = atBats > 0 ? totalBases / atBats : 0
 
       stats.push({
         playerId: player.id,
@@ -165,7 +364,13 @@ class Database {
       })
     }
 
-    return stats
+    // Filter by minPA at the end
+    return minPA > 0 ? stats.filter(stat => stat.paCount >= minPA) : stats;
+  }
+
+  // Get last import result
+  getLastImport(): ImportResult | null {
+    return this.lastImport;
   }
 
   // Clear all data
@@ -173,6 +378,7 @@ class Database {
     this.teams.clear()
     this.players.clear()
     this.plateAppearances.clear()
+    this.lastImport = null
   }
 
   // Get database stats
@@ -189,5 +395,19 @@ class Database {
   }
 }
 
-// Singleton database instance
-export const db = new Database()
+// Use a global variable to ensure persistence across module reloads
+declare global {
+  var __database: Database | undefined
+}
+
+// Get or create the global database instance
+function getGlobalDatabase(): Database {
+  if (!global.__database) {
+    console.log("Creating new global database instance")
+    global.__database = new Database()
+  }
+  return global.__database
+}
+
+// Export the database instance
+export const db = getGlobalDatabase()

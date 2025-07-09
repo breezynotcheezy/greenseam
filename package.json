@@ -67,7 +67,8 @@
     "vaul": "^0.9.6",
     "ws": "latest",
     "xlsx": "latest",
-    "zod": "latest"
+    "zod": "latest",
+    "zustand": "^5.0.6"
   },
   "devDependencies": {
     "@types/node": "^22",

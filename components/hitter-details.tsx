@@ -1,223 +1,250 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Progress } from "@/components/ui/progress"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Loader2, AlertCircle } from "lucide-react"
+import { create } from "zustand"
+import { Separator } from "./ui/separator"
+import { Hitter } from "./hitter-card"
 
-interface HitterDetailsProps {
-  hitter: {
-    id: number
-    name: string
-    paCount: number
-    avg: string
-    kRate: number
-    gbPercent: number
-    ldPercent: number
-    fbPercent: number
+interface SprayChartState {
+  selectedHitType: string
+  setSelectedHitType: (type: string) => void
+}
+
+const useSprayChartStore = create<SprayChartState>((set) => ({
+  selectedHitType: "all",
+  setSelectedHitType: (type) => set({ selectedHitType: type }),
+}))
+
+export function HitterDetails({ hitter }: { hitter: Hitter }) {
+  const { selectedHitType, setSelectedHitType } = useSprayChartStore()
+
+  // Generate mock spray chart data based on ball distribution
+  const generateSprayChartPoints = () => {
+    const points = []
+    const totalPoints = Math.min(hitter.paCount, 30) // Cap at 30 points for visual clarity
+
+    // Distribution based on hitter profile
+    const groundBallCount = Math.round((hitter.gbPercent / 100) * totalPoints)
+    const lineDriveCount = Math.round((hitter.ldPercent / 100) * totalPoints)
+    const flyBallCount = totalPoints - groundBallCount - lineDriveCount
+
+    // Generate ground balls (mostly to pull and middle)
+    for (let i = 0; i < groundBallCount; i++) {
+      const angle = Math.random() * 110 - 15 // -15 to 95 degrees
+      const distance = Math.random() * 30 + 60 // 60-90% of field
+      points.push({
+        x: Math.cos((angle * Math.PI) / 180) * distance,
+        y: Math.sin((angle * Math.PI) / 180) * distance,
+        type: "Ground",
+      })
+    }
+
+    // Generate line drives (more evenly distributed)
+    for (let i = 0; i < lineDriveCount; i++) {
+      const angle = Math.random() * 140 - 30 // -30 to 110 degrees
+      const distance = Math.random() * 30 + 65 // 65-95% of field
+      points.push({
+        x: Math.cos((angle * Math.PI) / 180) * distance,
+        y: Math.sin((angle * Math.PI) / 180) * distance,
+        type: "Line",
+      })
+    }
+
+    // Generate fly balls (more to pull side for power)
+    for (let i = 0; i < flyBallCount; i++) {
+      const angle = Math.random() * 120 - 20 // -20 to 100 degrees
+      const distance = Math.random() * 40 + 60 // 60-100% of field
+      points.push({
+        x: Math.cos((angle * Math.PI) / 180) * distance,
+        y: Math.sin((angle * Math.PI) / 180) * distance,
+        type: "Fly",
+      })
+    }
+
+    return points
   }
-}
 
-interface Prediction {
-  outcomes: Array<{
-    outcome: string
-    probability: number
-  }>
-  analysis: string
-}
-
-export function HitterDetails({ hitter }: HitterDetailsProps) {
-  const [prediction, setPrediction] = useState<Prediction | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [plateAppearances, setPlateAppearances] = useState<any[]>([])
-
-  useEffect(() => {
-    const fetchPrediction = async () => {
-      setLoading(true)
-      try {
-        const response = await fetch(`/api/predict?id=${hitter.id}`)
-        if (response.ok) {
-          const data = await response.json()
-          setPrediction(data)
-        }
-      } catch (error) {
-        console.error("Failed to fetch prediction:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchPrediction()
-  }, [hitter.id])
-
-  useEffect(() => {
-    const fetchPA = async () => {
-      try {
-        const res = await fetch(`/api/plate-appearances?id=${hitter.id}`)
-        if (res.ok) {
-          const data = await res.json()
-          setPlateAppearances(data)
-        }
-      } catch (err) {
-        console.error("Failed to fetch plate appearances:", err)
-      }
-    }
-
-    fetchPA()
-  }, [hitter.id])
-
-  const insights = [
-    `Batting average of ${hitter.avg} indicates ${Number.parseFloat(hitter.avg) > 0.3 ? "strong" : "developing"} contact ability`,
-    `${hitter.kRate}% strikeout rate is ${hitter.kRate < 20 ? "excellent" : hitter.kRate < 25 ? "good" : "concerning"}`,
-    `Ground ball tendency at ${hitter.gbPercent}% suggests ${hitter.gbPercent > 50 ? "contact-first" : "power"} approach`,
-    `Line drive rate of ${hitter.ldPercent}% shows ${hitter.ldPercent > 20 ? "quality" : "inconsistent"} barrel contact`,
-  ]
+  const sprayPoints = generateSprayChartPoints()
+  const filteredPoints = selectedHitType === "all" 
+    ? sprayPoints 
+    : sprayPoints.filter(point => point.type === selectedHitType)
 
   return (
-    <div className="mt-6">
-      <Tabs defaultValue="prediction" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="prediction">Prediction</TabsTrigger>
-          <TabsTrigger value="insights">Insights</TabsTrigger>
-          <TabsTrigger value="spray">Spray</TabsTrigger>
-          <TabsTrigger value="data">Data</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="prediction" className="space-y-4">
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin" />
-              <span className="ml-2">Generating prediction...</span>
-            </div>
-          ) : prediction ? (
-            <div className="space-y-4">
-              <div className="space-y-3">
-                {prediction.outcomes.map((outcome, index) => (
-                  <div key={index} className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="font-medium">{outcome.outcome}</span>
-                      <span className="text-muted-foreground">{outcome.probability}%</span>
-                    </div>
-                    <Progress value={outcome.probability} className="h-2" />
-                  </div>
-                ))}
-              </div>
-              <p className="text-sm text-muted-foreground bg-muted p-3 rounded">{prediction.analysis}</p>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              <AlertCircle className="h-8 w-8 mx-auto mb-2" />
-              <p>Unable to generate prediction</p>
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="insights" className="space-y-4">
-          {hitter.paCount >= 15 ? (
-            <div className="space-y-3">
-              {insights.map((insight, index) => (
-                <div key={index} className="flex items-start gap-2">
-                  <div className="h-1.5 w-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
-                  <p className="text-sm text-muted-foreground">{insight}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <AlertCircle className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">Insights available with 15+ plate appearances</p>
-              <Badge variant="outline" className="mt-2">
-                {hitter.paCount}/15 PA
-              </Badge>
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="spray" className="space-y-4">
-          <div className="aspect-square bg-muted rounded-lg flex items-center justify-center">
-            <div className="text-center">
-              <svg
-                width="200"
-                height="200"
-                viewBox="0 0 200 200"
-                className="mx-auto mb-4 opacity-50"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                {/* Baseball field outline */}
-                <path
-                  d="M100 180 L20 100 Q20 20 100 20 Q180 20 180 100 L100 180 Z"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  fill="none"
-                />
-                {/* Infield diamond */}
-                <path d="M100 140 L60 100 L100 60 L140 100 Z" stroke="currentColor" strokeWidth="1" fill="none" />
-                {/* Sample hit dots */}
-                <circle cx="80" cy="120" r="3" fill="hsl(var(--primary))" opacity="0.6" />
-                <circle cx="120" cy="110" r="3" fill="hsl(var(--primary))" opacity="0.6" />
-                <circle cx="90" cy="90" r="3" fill="hsl(var(--primary))" opacity="0.6" />
-                <circle cx="110" cy="130" r="3" fill="hsl(var(--primary))" opacity="0.6" />
-              </svg>
-              <p className="text-sm text-muted-foreground">Spray Chart</p>
-              <p className="text-xs text-muted-foreground mt-1">Heat map visualization coming soon</p>
-            </div>
+    <div className="space-y-4 p-4">
+      {/* Stats Overview */}
+      <div>
+        <h3 className="text-sm font-medium mb-2">Hitting Stats</h3>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">PA:</span>
+            <span>{hitter.paCount}</span>
           </div>
-        </TabsContent>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">AVG:</span>
+            <span>{hitter.avg}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">OBP:</span>
+            <span>{hitter.obp}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">SLG:</span>
+            <span>{hitter.slg}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">OPS:</span>
+            <span>{hitter.ops}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">K Rate:</span>
+            <span>{hitter.kRate.toFixed(1)}%</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">BB Rate:</span>
+            <span>{hitter.bbRate.toFixed(1)}%</span>
+          </div>
+        </div>
+      </div>
 
-        <TabsContent value="data" className="space-y-4">
-          {plateAppearances.length > 0 ? (
-            <div className="space-y-4">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Result</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Inning</TableHead>
-                    <TableHead>Count</TableHead>
-                    <TableHead>Situation</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {plateAppearances.map((pa) => (
-                    <TableRow key={pa.id}>
-                      <TableCell>{pa.gameDate}</TableCell>
-                      <TableCell>{pa.result}</TableCell>
-                      <TableCell>{pa.bbType || ""}</TableCell>
-                      <TableCell>{pa.inning ?? ""}</TableCell>
-                      <TableCell>{pa.count ?? ""}</TableCell>
-                      <TableCell>{pa.situation ?? ""}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              <Button
-                variant="outline"
-                onClick={() =>
-                  window.open(
-                    `/api/plate-appearances?id=${hitter.id}&format=csv`
-                  )
-                }
-              >
-                Download CSV
-              </Button>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No data available.</p>
-          )}
-        </TabsContent>
-      </Tabs>
+      <Separator />
+
+      {/* Detailed Stats */}
+      <div>
+        <h3 className="text-sm font-medium mb-2">Hit Breakdown</h3>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Hits:</span>
+            <span>{hitter.hits}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Doubles:</span>
+            <span>{hitter.doubles}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Triples:</span>
+            <span>{hitter.triples}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Home Runs:</span>
+            <span>{hitter.homeRuns}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Walks:</span>
+            <span>{hitter.walks}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Strikeouts:</span>
+            <span>{hitter.strikeouts}</span>
+          </div>
+        </div>
+      </div>
+
+      <Separator />
+
+      {/* Spray Chart */}
+      <div>
+        <div className="flex justify-between items-center mb-2">
+          <h3 className="text-sm font-medium">Spray Chart</h3>
+          <div className="flex gap-1">
+            <button
+              onClick={() => setSelectedHitType("all")}
+              className={`px-2 py-1 text-xs rounded ${
+                selectedHitType === "all" ? "bg-primary text-primary-foreground" : "bg-secondary"
+              }`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setSelectedHitType("Ground")}
+              className={`px-2 py-1 text-xs rounded ${
+                selectedHitType === "Ground" ? "bg-amber-500 text-white" : "bg-secondary"
+              }`}
+            >
+              GB
+            </button>
+            <button
+              onClick={() => setSelectedHitType("Line")}
+              className={`px-2 py-1 text-xs rounded ${
+                selectedHitType === "Line" ? "bg-green-500 text-white" : "bg-secondary"
+              }`}
+            >
+              LD
+            </button>
+            <button
+              onClick={() => setSelectedHitType("Fly")}
+              className={`px-2 py-1 text-xs rounded ${
+                selectedHitType === "Fly" ? "bg-blue-500 text-white" : "bg-secondary"
+              }`}
+            >
+              FB
+            </button>
+          </div>
+        </div>
+
+        {/* Baseball Field SVG */}
+        <div className="relative w-full aspect-square bg-green-100 rounded-full overflow-hidden">
+          {/* Field lines */}
+          <svg
+            viewBox="-100 -100 200 200"
+            className="absolute inset-0 w-full h-full"
+            style={{ transform: "rotate(-45deg)" }}
+          >
+            {/* Infield dirt */}
+            <path
+              d="M 0,0 L 70.7,70.7 L 0,100 L -70.7,70.7 Z"
+              fill="#e2c19d"
+              stroke="#b58863"
+              strokeWidth="1"
+            />
+            
+            {/* Bases */}
+            <rect x="-3" y="-3" width="6" height="6" fill="white" stroke="#333" strokeWidth="1" /> {/* Home */}
+            <rect x="67" y="67" width="6" height="6" fill="white" stroke="#333" strokeWidth="1" /> {/* 1st */}
+            <rect x="-3" y="97" width="6" height="6" fill="white" stroke="#333" strokeWidth="1" /> {/* 2nd */}
+            <rect x="-73" y="67" width="6" height="6" fill="white" stroke="#333" strokeWidth="1" /> {/* 3rd */}
+            
+            {/* Pitcher's mound */}
+            <circle cx="0" cy="50" r="5" fill="#e2c19d" stroke="#b58863" strokeWidth="1" />
+            
+            {/* Outfield lines */}
+            <line x1="70.7" y1="70.7" x2="100" y2="100" stroke="#ffffff" strokeWidth="2" />
+            <line x1="-70.7" y1="70.7" x2="-100" y2="100" stroke="#ffffff" strokeWidth="2" />
+            
+            {/* Hit points */}
+            {filteredPoints.map((point, i) => {
+              let color = "#666";
+              if (point.type === "Ground") color = "#f59e0b";
+              if (point.type === "Line") color = "#10b981";
+              if (point.type === "Fly") color = "#3b82f6";
+              
+              return (
+                <circle
+                  key={i}
+                  cx={point.x}
+                  cy={point.y}
+                  r="2.5"
+                  fill={color}
+                  stroke="#fff"
+                  strokeWidth="0.5"
+                />
+              );
+            })}
+          </svg>
+        </div>
+        <div className="flex justify-center gap-4 mt-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded-full bg-amber-500"></span>
+            <span>Ground Ball</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded-full bg-green-500"></span>
+            <span>Line Drive</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+            <span>Fly Ball</span>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
