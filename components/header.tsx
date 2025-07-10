@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { RefreshCw } from "lucide-react"
 
@@ -19,6 +20,12 @@ export function Header({ title, description, showRefresh, onRefresh }: HeaderPro
   return (
     <header className={`sticky top-0 z-40 w-full ${title ? 'border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60' : 'bg-transparent'}`}>
       <div className="flex h-16 items-center px-6">
+        <Link href="/" className="mr-6">
+          <h2 className="text-xl font-bold text-forest-700 hover:text-forest-800 transition-colors">
+            Greenseam AI
+          </h2>
+        </Link>
+
         {title && (
           <div className="flex-1">
             <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
