@@ -4,7 +4,7 @@ import { useState, useMemo } from "react"
 import useSWR from "swr"
 import Fuse from "fuse.js"
 import Masonry from "react-masonry-css"
-import { RefreshCw, Search, Users } from "lucide-react"
+import { RefreshCw, Search, Users, FileSpreadsheet } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -13,6 +13,7 @@ import { Slider } from "@/components/ui/slider"
 import { HitterCard } from "@/components/hitter-card"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { exportHittersToExcel } from "@/lib/utils"
 
 // Define hitter type
 interface Hitter {
@@ -194,10 +195,25 @@ export default function HittersPage() {
         <p className="text-sm text-muted-foreground">
           {filteredHitters?.length || 0} hitter{(!filteredHitters || filteredHitters.length !== 1) ? "s" : ""} found
         </p>
-        <Button variant="outline" size="sm" onClick={() => mutate()}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => {
+              if (filteredHitters && filteredHitters.length > 0) {
+                exportHittersToExcel(filteredHitters)
+              }
+            }}
+            disabled={!filteredHitters || filteredHitters.length === 0}
+          >
+            <FileSpreadsheet className="h-4 w-4 mr-2" />
+            Export Excel
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => mutate()}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Error state */}
