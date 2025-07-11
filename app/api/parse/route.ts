@@ -3,90 +3,120 @@ import OpenAI from "openai"
 import { db } from "@/lib/database"
 import { importFormSchema } from "@/lib/validations"
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+// Check for OpenAI API key
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY
+if (!OPENAI_API_KEY) {
+  console.warn("OpenAI API key is not configured")
+}
+
+const openai = OPENAI_API_KEY ? new OpenAI({
+  apiKey: OPENAI_API_KEY,
+}) : null
 
 async function processWithAI(chunk: string, gameInfo: any): Promise<any[]> {
-  console.log("processWithAI called, openai client exists:", !!openai)
+  console.log("processWithAI called with chunk:", chunk)
 
-  // Require API key - no fallback
+  // Require API key - return proper error
   if (!openai) {
     console.error("No OpenAI client available")
-    throw new Error("OpenAI API key is required for data processing")
+    throw new Error("OPENAI_API_KEY_MISSING")
   }
 
   try {
     console.log("Making OpenAI API call...")
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-3.5-turbo",
       messages: [
         {
           role: "system",
-          content: `You are a GameChanger data parser. Extract EVERY baseball HITTING play from the text and return ONLY a JSON array within a JSON object with a "plays" key. Each object in the array should have:
-- playerName: string (player's full name, as close as possible to the original)
-- result: string (Hit, Out, K, Walk, HBP)
-- bbType: string (Ground, Line, Fly, 1B, 2B, 3B, HR) - optional
-- gameDate: string (YYYY-MM-DD format) - optional
-- inning: number - optional
-- count: string (balls-strikes) - optional
-- situation: string (runners on base, outs) - optional
+          content: `You are a baseball play-by-play parser. Extract all hitting plays from the text. You MUST return a JSON object with a "plays" array containing each play. Return EXACTLY ONE play per at-bat.
 
-CRITICAL INSTRUCTIONS:
-1. You MUST extract EVERY SINGLE PLAY from the text. Do not skip any plays.
-2. Focus ONLY on the batter/hitter outcomes - ignore fielding information
-3. Do NOT include fielder names or defensive players
-4. When you see text like "H W singles on a ground ball to first baseman M L", extract ONLY data for the hitter H W
-5. Process ONLY hitting/batting data
-6. ALWAYS return your response in this exact JSON format: {"plays": [...array of play objects...]}
-7. If you can't extract any valid plays, return {"plays": []}
-8. GameChanger data often has player names in formats like "Last F" or "First L" - extract the full name
-9. Pay special attention to lines that contain words like "singles", "doubles", "flies out", "grounds out", "walks", "hit by pitch", "reaches on"
-10. If you see a line that looks like a play, extract it as a play. Do not skip any play lines.
-11. If in doubt, extract the play as a hitting event.
-12. NEVER skip a play just because it's in a format you haven't seen before.
-13. NEVER skip a play just because you're unsure about some details - extract what you can.
-14. PROCESS EVERY SINGLE LINE THAT LOOKS LIKE A PLAY.`,
+Example input: "Frank F strikes out. The player on first advances. John K flies out."
+Expected output: {
+  "plays": [
+    {"playerName": "Frank F", "result": "K"},
+    {"playerName": "John K", "result": "Out", "bbType": "Fly"}
+  ]
+}
+
+Rules:
+1. Return EXACTLY ONE play per at-bat - never duplicate plays
+2. Use these exact values for "result":
+   - "K" for strikeouts
+   - "Out" for any kind of out (fly out, ground out, etc)
+   - "Hit" for hits
+   - "Walk" for walks
+   - "HBP" for hit by pitch
+3. Use these exact values for "bbType" (optional):
+   - "Ground" for ground balls
+   - "Line" for line drives
+   - "Fly" for fly balls/pop ups
+   - "1B" for singles
+   - "2B" for doubles
+   - "3B" for triples
+   - "HR" for home runs
+
+IMPORTANT: Each batter should appear EXACTLY ONCE per at-bat in the output.`
         },
         {
           role: "user",
-          content: chunk,
-        },
+          content: `Here is the play-by-play text to parse. Extract all hitting plays, with exactly one play per at-bat:
+
+${chunk}`
+        }
       ],
       temperature: 0,
       response_format: { type: "json_object" },
     })
 
-    console.log("OpenAI API response received")
+    console.log("OpenAI API response received:", response)
     const content = response.choices[0].message.content
     if (!content) {
+      console.error("No content in OpenAI response")
       throw new Error("No content returned from OpenAI")
     }
+
+    console.log("Raw OpenAI response content:", content)
 
     try {
       // Parse the content as JSON
       const parsedContent = JSON.parse(content)
-      
-      console.log("Parsed OpenAI response (first 500 chars):", JSON.stringify(parsedContent).substring(0, 500))
+      console.log("Parsed OpenAI response:", JSON.stringify(parsedContent, null, 2))
       
       // Check if the parsed content has a 'plays' property that is an array
       if (parsedContent.plays && Array.isArray(parsedContent.plays)) {
-        console.log(`Found ${parsedContent.plays.length} plays in the response`)
-        return parsedContent.plays
+        const plays = parsedContent.plays
+        
+        // Deduplicate plays by player name and result
+        const uniquePlays = plays.reduce((acc: any[], play: any) => {
+          const key = `${play.playerName}-${play.result}`
+          if (!acc.some(p => `${p.playerName}-${p.result}` === key)) {
+            acc.push(play)
+          } else {
+            console.log(`Skipping duplicate play for ${play.playerName}`)
+          }
+          return acc
+        }, [])
+        
+        console.log(`Found ${uniquePlays.length} unique plays in the response:`, uniquePlays)
+        return uniquePlays
       } else if (Array.isArray(parsedContent)) {
-        console.log(`Found ${parsedContent.length} plays in the response (array format)`)
+        console.log(`Found ${parsedContent.length} plays in array format:`, parsedContent)
         return parsedContent
-      } else {  
+      } else {
         console.error("Unexpected response format:", parsedContent)
-        return [] // Return empty array instead of throwing
+        return []
       }
     } catch (parseError) {
       console.error("Error parsing OpenAI response:", parseError)
-      return [] // Return empty array instead of throwing
+      console.error("Failed content:", content)
+      return []
     }
   } catch (error) {
     console.error("Error in processWithAI:", error)
-    // Don't throw, return empty array
+    if (error && typeof error === 'object' && 'response' in error) {
+      console.error("OpenAI API error response:", (error as any).response.data)
+    }
     return []
   }
 }
@@ -144,9 +174,13 @@ async function parseExcelFile(buffer: ArrayBuffer, teamName?: string, chunkSize?
   return { results: [] }
 }
 
-async function processTextData(text: string, gameInfo: any, teamName: string, chunkSize = 4000) {
+async function processTextData(text: string, gameInfo: any, teamName: string, chunkSize = 2000) {
   try {
     console.log(`Processing text data for team: ${teamName}, text length: ${text.length} chars`)
+    console.log("Full text being processed:", text)
+    
+    // Clean up the text - remove extra whitespace and normalize line endings
+    text = text.replace(/\r\n/g, '\n').replace(/\n+/g, '\n').trim()
     
     // Split text into chunks for processing
     const chunks = chunkTextByLines(text, chunkSize)
@@ -157,32 +191,43 @@ async function processTextData(text: string, gameInfo: any, teamName: string, ch
     let processedChunks = 0
     
     for (const chunk of chunks) {
+      console.log(`\nProcessing chunk ${processedChunks + 1}/${chunks.length}:`)
+      console.log("Chunk content:", chunk)
+      
       const plays = await processWithAI(chunk, gameInfo)
       if (plays && Array.isArray(plays)) {
+        console.log(`Found ${plays.length} plays in chunk:`, JSON.stringify(plays, null, 2))
         allPlays.push(...plays)
+      } else {
+        console.log("No plays found in chunk or invalid response")
       }
       processedChunks++
       console.log(`Processed chunk ${processedChunks}/${chunks.length}, found ${plays?.length || 0} plays`)
     }
     
-    console.log(`Total plays found: ${allPlays.length}`)
+    console.log(`\nTotal plays found: ${allPlays.length}`)
     
     if (allPlays.length === 0) {
-      console.log("No plays extracted from the text")
+      console.log("No plays extracted from the text. Original text:", text)
       return {
-        success: true,
-        message: "No plays were found in the imported data. Please check the format and try again.",
+        success: false,
+        message: "No plays were found in the imported data. The text was processed but no valid baseball plays were detected. Please check that the text contains play-by-play data in a readable format.",
         plays: [],
         inserted: 0,
         newPlayers: 0,
         updatedPlayers: 0,
-        teamName
+        teamName,
+        debug: {
+          textSample: text,
+          chunkCount: chunks.length,
+          chunks: chunks.map(chunk => ({ content: chunk }))
+        }
       };
     }
     
     // Log some example plays
     if (allPlays.length > 0) {
-      console.log("Example plays:", allPlays.slice(0, 3))
+      console.log("Example plays:", JSON.stringify(allPlays.slice(0, 3), null, 2))
     }
     
     // Process the parsed plays to update the database
@@ -215,6 +260,14 @@ async function processTextData(text: string, gameInfo: any, teamName: string, ch
 export async function POST(request: NextRequest) {
   try {
     console.log("Received parse request")
+    
+    // Check for OpenAI API key first
+    if (!OPENAI_API_KEY) {
+      return NextResponse.json({ 
+        error: "OpenAI API key is required for data processing. Please set the OPENAI_API_KEY environment variable.",
+        code: "OPENAI_API_KEY_MISSING"
+      }, { status: 400 })
+    }
     
     // Check if it's a multipart form data (file upload) or JSON (raw text)
     const contentType = request.headers.get("content-type") || ""

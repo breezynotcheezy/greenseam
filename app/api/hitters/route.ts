@@ -15,6 +15,15 @@ export async function GET(request: NextRequest) {
     const teamId = searchParams.get("teamId")
     const minPA = Number.parseInt(searchParams.get("minPA") || "0")
 
+    // Check if we have any data
+    const dbStats = db.getStats()
+    if (dbStats.plateAppearances === 0) {
+      return NextResponse.json({ 
+        error: "No data available. Please import some data first.",
+        code: "NO_DATA"
+      }, { status: 404 })
+    }
+
     let stats = db.getPlayerStats(minPA)
 
     // Filter by team if specified
@@ -48,6 +57,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(hitters)
   } catch (error) {
     console.error("Hitters API error:", error)
-    return NextResponse.json({ error: "Failed to fetch hitters" }, { status: 500 })
+    return NextResponse.json({ 
+      error: "Failed to fetch hitters",
+      code: "FETCH_ERROR"
+    }, { status: 500 })
   }
 }

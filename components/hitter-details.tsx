@@ -79,10 +79,6 @@ export function HitterDetails({ hitter }: { hitter: Hitter }) {
             <span>{hitter.paCount}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">AVG:</span>
-            <span>{hitter.avg}</span>
-          </div>
-          <div className="flex justify-between">
             <span className="text-muted-foreground">OBP:</span>
             <span>{hitter.obp}</span>
           </div>

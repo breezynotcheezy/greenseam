@@ -91,16 +91,22 @@ export function ImportPanel() {
         })
       }
 
-      const data = await response.json()
+      let data
+      try {
+        data = await response.json()
+      } catch (e) {
+        throw new Error("Failed to parse server response. Please try again.")
+      }
 
       if (!response.ok) {
         const errorMsg = data.error || "Failed to parse data"
-        if (errorMsg.includes("API key")) {
+        if (data.code === "OPENAI_API_KEY_MISSING") {
+          setError("OpenAI API key is not configured. Please contact the administrator to set up the API key.")
           toast.error("OpenAI API key is required for data processing")
         } else {
+          setError(errorMsg)
           toast.error(errorMsg)
         }
-        setError(errorMsg)
         return
       }
 

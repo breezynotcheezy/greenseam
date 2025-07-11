@@ -14,6 +14,7 @@ import { HitterCard } from "@/components/hitter-card"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { exportHittersToExcel } from "@/lib/utils"
+import { useToast } from "@/components/ui/use-toast"
 
 // Define hitter type
 interface Hitter {
@@ -53,6 +54,7 @@ const fetcher = (url: string) => fetch(url).then((res) => {
 });
 
 export default function HittersPage() {
+  const { toast } = useToast()
   const [selectedTeam, setSelectedTeam] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
   const [minPA, setMinPA] = useState([5]) // Default to 5 minimum plate appearances
@@ -60,7 +62,7 @@ export default function HittersPage() {
 
   // Fetch teams and hitters
   const { data: teams } = useSWR("/api/teams", fetcher)
-  const { data: hitters, mutate, error, isLoading } = useSWR<Hitter[]>(
+  const { data: hitters, error, isLoading, mutate } = useSWR<Hitter[]>(
     `/api/hitters?teamId=${selectedTeam}&minPA=0`, // Always use minPA=0 in the API call
     fetcher
   )
@@ -109,6 +111,26 @@ export default function HittersPage() {
 
     return filtered
   }, [hitters, searchQuery, fuse, sortBy, minPA])
+
+  // Handle Excel export
+  const handleExport = () => {
+    try {
+      if (filteredHitters && filteredHitters.length > 0) {
+        exportHittersToExcel(filteredHitters)
+        toast({
+          title: "Export Successful",
+          description: `Exported ${filteredHitters.length} hitters to Excel`,
+        })
+      }
+    } catch (error) {
+      console.error("Export error:", error)
+      toast({
+        title: "Export Failed",
+        description: "Failed to export hitters to Excel. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
 
   const breakpointColumns = {
     default: 4,
@@ -199,27 +221,36 @@ export default function HittersPage() {
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={() => {
-              if (filteredHitters && filteredHitters.length > 0) {
-                exportHittersToExcel(filteredHitters)
-              }
-            }}
+            onClick={handleExport}
             disabled={!filteredHitters || filteredHitters.length === 0}
           >
             <FileSpreadsheet className="h-4 w-4 mr-2" />
             Export Excel
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => mutate()}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
           </Button>
         </div>
       </div>
 
       {/* Error state */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-md">
-          Error loading hitter data. Please try again.
+        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-md flex flex-col gap-2">
+          <p className="font-medium">
+            {error.code === "NO_DATA" ? "No Data Available" : "Error Loading Data"}
+          </p>
+          <p>
+            {error.code === "NO_DATA" 
+              ? "Please import some data first using the import feature."
+              : "There was an error loading the hitter data. Please try again."}
+          </p>
+          {error.code === "NO_DATA" && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="self-start mt-2"
+              onClick={() => window.location.href = "/import"}
+            >
+              Go to Import
+            </Button>
+          )}
         </div>
       )}
 
@@ -268,11 +299,6 @@ export default function HittersPage() {
           <p className="text-gray-500">Try adjusting your filters or importing some data</p>
         </div>
       ) : null}
-
-      {/* FAB Refresh Button */}
-      <Button className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg" size="icon" onClick={() => mutate()}>
-        <RefreshCw className="h-5 w-5" />
-      </Button>
     </div>
   )
 }
