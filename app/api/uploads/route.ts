@@ -1,19 +1,25 @@
 import { NextResponse } from "next/server"
-import { db } from "@/lib/database"
+import { prisma } from "@/lib/prisma"
 
 export const runtime = "nodejs"
 
 export async function GET() {
   try {
-    const stats = db.getStats()
-    const teams = db.getTeams()
+    const teams = await prisma.team.findMany({
+      include: {
+        players: {
+          include: {
+            plateAppearances: true
+          }
+        }
+      }
+    })
 
     // Create mock upload records based on current data
     const uploads = teams
-      .map((team, index) => {
-        const teamPlayers = db.getPlayers().filter((p) => p.teamId === team.id)
-        const teamPAs = teamPlayers.reduce((total, player) => {
-          return total + db.getPlateAppearances(player.id).length
+      .map((team: any, index: number) => {
+        const teamPAs = team.players.reduce((total: number, player: any) => {
+          return total + player.plateAppearances.length
         }, 0)
 
         return {
@@ -24,7 +30,7 @@ export async function GET() {
           createdAt: new Date(Date.now() - index * 24 * 60 * 60 * 1000).toISOString(),
         }
       })
-      .filter((upload) => upload.plateAppearances > 0)
+      .filter((upload: any) => upload.plateAppearances > 0)
 
     return NextResponse.json(uploads.slice(0, 10))
   } catch (error) {

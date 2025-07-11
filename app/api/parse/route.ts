@@ -1,340 +1,347 @@
-import { NextRequest, NextResponse } from "next/server"
-import OpenAI from "openai"
-import { db } from "@/lib/database"
-import { importFormSchema } from "@/lib/validations"
+import { NextResponse } from 'next/server'
+import OpenAI from 'openai'
+import { db } from '@/lib/database'
+import { prisma } from '@/lib/prisma'
 
-// Check for OpenAI API key
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY
-if (!OPENAI_API_KEY) {
-  console.warn("OpenAI API key is not configured")
+// Initialize OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+})
+
+// Maximum chunk size for OpenAI API
+const MAX_CHUNK_SIZE = 2000
+
+interface ParsedPlay {
+  playerName: string
+  result: string
+  bbType?: string
+  gameDate?: string
+  inning?: number
+  count?: string
+  situation?: string
+  pitchCount?: number
+  inPlay: boolean
+  exitVelocity?: number
+  launchAngle?: number
+  distance?: number
+  location?: string
+  contactType?: string
+  pitchType?: string
+  rbi: number
+  runs: number
+  isHomeRun: boolean
+  isStrikeout: boolean
+  isWalk: boolean
+  isHBP: boolean
+  isSacFly: boolean
+  stolenBases: number
+  caughtStealing: number
+  leverageIndex?: number
+  clutchSituation?: string
 }
 
-const openai = OPENAI_API_KEY ? new OpenAI({
-  apiKey: OPENAI_API_KEY,
-}) : null
-
-async function processWithAI(chunk: string, gameInfo: any): Promise<any[]> {
-  console.log("processWithAI called with chunk:", chunk)
-
-  // Require API key - return proper error
-  if (!openai) {
-    console.error("No OpenAI client available")
-    throw new Error("OPENAI_API_KEY_MISSING")
-  }
-
+export async function POST(request: Request) {
   try {
-    console.log("Making OpenAI API call...")
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+    // Check for API key
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { error: 'OpenAI API key not configured' },
+        { status: 500 }
+      )
+    }
+
+    let text: string;
+    let teamName: string;
+
+    // Check if the request is multipart form data
+    const contentType = request.headers.get('content-type') || '';
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await request.formData();
+      const file = formData.get('file') as File;
+      if (!file) {
+        return NextResponse.json(
+          { error: 'No file provided' },
+          { status: 400 }
+        );
+      }
+      text = await file.text();
+      teamName = (formData.get('teamOverride') as string) || 'Unknown Team';
+    } else {
+      // Handle JSON request
+      const body = await request.json();
+      text = body.text || body.rawText;
+      teamName = body.teamName || body.teamOverride || 'Unknown Team';
+    }
+
+    if (!text) {
+      return NextResponse.json(
+        { error: 'Missing required text data' },
+        { status: 400 }
+      );
+    }
+
+    // Clean up text
+    const cleanText = text
+      .replace(/\r\n/g, '\n')
+      .replace(/\n+/g, '\n')
+      .trim();
+
+    // Split text into chunks
+    const chunks = splitIntoChunks(cleanText, MAX_CHUNK_SIZE);
+    const allPlays: ParsedPlay[] = [];
+
+    // Process each chunk
+    for (const chunk of chunks) {
+      const plays = await parseChunk(chunk);
+      allPlays.push(...plays);
+    }
+
+    // Remove duplicates
+    const uniquePlays = removeDuplicates(allPlays);
+
+    // Store plays in database
+    const result = await storePlays(uniquePlays, teamName);
+
+    return NextResponse.json({
+      ...result,
+      plays: uniquePlays,
+      success: true
+    });
+  } catch (error: any) {
+    console.error('Parse API error:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to parse text', success: false },
+      { status: 500 }
+    );
+  }
+}
+
+async function parseChunk(text: string): Promise<ParsedPlay[]> {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
       messages: [
         {
-          role: "system",
-          content: `You are a baseball play-by-play parser. Extract all hitting plays from the text. You MUST return a JSON object with a "plays" array containing each play. Return EXACTLY ONE play per at-bat.
+          role: 'system',
+          content: `You are a baseball statistician that extracts play-by-play data. For each plate appearance, extract:
+- Player name
+- Result (Hit, Out, K, Walk, HBP)
+- Ball type (Ground, Line, Fly, 2B, 3B, HR)
+- Game situation (inning, count, runners on base)
+- Advanced metrics (exit velocity, launch angle, contact quality)
+- Base running (stolen bases, caught stealing)
+- Run production (RBI, runs scored)
 
-Example input: "Frank F strikes out. The player on first advances. John K flies out."
-Expected output: {
-  "plays": [
-    {"playerName": "Frank F", "result": "K"},
-    {"playerName": "John K", "result": "Out", "bbType": "Fly"}
-  ]
+Format each play as a JSON object with these fields:
+{
+  playerName: string,
+  result: string,
+  bbType?: string,
+  gameDate?: string,
+  inning?: number,
+  count?: string,
+  situation?: string,
+  pitchCount?: number,
+  inPlay: boolean,
+  exitVelocity?: number,
+  launchAngle?: number,
+  distance?: number,
+  location?: string,
+  contactType?: string,
+  pitchType?: string,
+  rbi: number,
+  runs: number,
+  isHomeRun: boolean,
+  isStrikeout: boolean,
+  isWalk: boolean,
+  isHBP: boolean,
+  isSacFly: boolean,
+  stolenBases: number,
+  caughtStealing: number,
+  leverageIndex?: number,
+  clutchSituation?: string
 }
 
-Rules:
-1. Return EXACTLY ONE play per at-bat - never duplicate plays
-2. Use these exact values for "result":
-   - "K" for strikeouts
-   - "Out" for any kind of out (fly out, ground out, etc)
-   - "Hit" for hits
-   - "Walk" for walks
-   - "HBP" for hit by pitch
-3. Use these exact values for "bbType" (optional):
-   - "Ground" for ground balls
-   - "Line" for line drives
-   - "Fly" for fly balls/pop ups
-   - "1B" for singles
-   - "2B" for doubles
-   - "3B" for triples
-   - "HR" for home runs
+Return an array of these objects, one for each plate appearance.
 
-IMPORTANT: Each batter should appear EXACTLY ONCE per at-bat in the output.`
+Example input:
+"Frank F strikes out. The player on first advances to second on a stolen base. John K is up next. John K hits a pop fly to center field and gets out."
+
+Example output:
+[
+  {
+    "playerName": "Frank F",
+    "result": "K",
+    "isStrikeout": true,
+    "inPlay": false,
+    "rbi": 0,
+    "runs": 0,
+    "isHomeRun": false,
+    "isWalk": false,
+    "isHBP": false,
+    "isSacFly": false,
+    "stolenBases": 0,
+    "caughtStealing": 0
+  },
+  {
+    "playerName": "John K",
+    "result": "Out",
+    "bbType": "Fly",
+    "location": "CF",
+    "inPlay": true,
+    "contactType": "Medium",
+    "rbi": 0,
+    "runs": 0,
+    "isHomeRun": false,
+    "isStrikeout": false,
+    "isWalk": false,
+    "isHBP": false,
+    "isSacFly": false,
+    "stolenBases": 0,
+    "caughtStealing": 0
+  }
+]`
         },
         {
-          role: "user",
-          content: `Here is the play-by-play text to parse. Extract all hitting plays, with exactly one play per at-bat:
-
-${chunk}`
+          role: 'user',
+          content: text
         }
       ],
       temperature: 0,
-      response_format: { type: "json_object" },
     })
 
-    console.log("OpenAI API response received:", response)
-    const content = response.choices[0].message.content
-    if (!content) {
-      console.error("No content in OpenAI response")
-      throw new Error("No content returned from OpenAI")
+    const result = completion.choices[0]?.message?.content
+    if (!result) {
+      throw new Error('No response from OpenAI')
     }
-
-    console.log("Raw OpenAI response content:", content)
 
     try {
-      // Parse the content as JSON
-      const parsedContent = JSON.parse(content)
-      console.log("Parsed OpenAI response:", JSON.stringify(parsedContent, null, 2))
-      
-      // Check if the parsed content has a 'plays' property that is an array
-      if (parsedContent.plays && Array.isArray(parsedContent.plays)) {
-        const plays = parsedContent.plays
-        
-        // Deduplicate plays by player name and result
-        const uniquePlays = plays.reduce((acc: any[], play: any) => {
-          const key = `${play.playerName}-${play.result}`
-          if (!acc.some(p => `${p.playerName}-${p.result}` === key)) {
-            acc.push(play)
-          } else {
-            console.log(`Skipping duplicate play for ${play.playerName}`)
-          }
-          return acc
-        }, [])
-        
-        console.log(`Found ${uniquePlays.length} unique plays in the response:`, uniquePlays)
-        return uniquePlays
-      } else if (Array.isArray(parsedContent)) {
-        console.log(`Found ${parsedContent.length} plays in array format:`, parsedContent)
-        return parsedContent
-      } else {
-        console.error("Unexpected response format:", parsedContent)
-        return []
-      }
-    } catch (parseError) {
-      console.error("Error parsing OpenAI response:", parseError)
-      console.error("Failed content:", content)
-      return []
+      return JSON.parse(result)
+    } catch (error) {
+      console.error('Failed to parse OpenAI response:', result)
+      throw new Error('Invalid response format from OpenAI')
     }
-  } catch (error) {
-    console.error("Error in processWithAI:", error)
-    if (error && typeof error === 'object' && 'response' in error) {
-      console.error("OpenAI API error response:", (error as any).response.data)
-    }
-    return []
+  } catch (error: any) {
+    console.error('OpenAI API error:', error)
+    throw new Error(error.message || 'Failed to parse chunk')
   }
 }
 
-// Improved chunking: split on line boundaries and preserve context
-function chunkTextByLines(text: string, chunkSize: number): string[] {
-  const lines = text.split(/\r?\n/)
+function splitIntoChunks(text: string, maxSize: number): string[] {
   const chunks: string[] = []
-  let currentChunk: string[] = []
-  let currentLength = 0
-  let gameContext = ""
-  
-  // Extract game context from the first few lines (usually contains date, teams, etc.)
-  const contextLines = lines.slice(0, 20).join("\n")
-  if (contextLines.length > 0) {
-    gameContext = contextLines + "\n\n--- Game Data ---\n\n"
-  }
-  
-  for (const line of lines) {
-    // If this line contains inning information, include it in every chunk
-    if (line.match(/(top|bottom)\s+(\d+)|inning\s+(\d+)/i)) {
-      if (currentChunk.length > 0) {
-        chunks.push(gameContext + currentChunk.join("\n"))
-        currentChunk = []
-        currentLength = 0
-      }
-      gameContext = contextLines + "\n\n" + line + "\n\n--- Plays ---\n\n"
-      continue
+  const sentences = text.split(/[.!?]+\s+/)
+  let currentChunk = ''
+
+  for (const sentence of sentences) {
+    if (currentChunk.length + sentence.length > maxSize) {
+      if (currentChunk) chunks.push(currentChunk.trim())
+      currentChunk = sentence
+    } else {
+      currentChunk += (currentChunk ? ' ' : '') + sentence
     }
-    
-    // If adding this line would exceed chunk size, save current chunk and start new one
-    if (currentLength + line.length > chunkSize && currentChunk.length > 0) {
-      chunks.push(gameContext + currentChunk.join("\n"))
-      currentChunk = []
-      currentLength = 0
-    }
-    
-    currentChunk.push(line)
-    currentLength += line.length
   }
-  
-  // Add the last chunk if there's anything left
-  if (currentChunk.length > 0) {
-    chunks.push(gameContext + currentChunk.join("\n"))
-  }
-  
+
+  if (currentChunk) chunks.push(currentChunk.trim())
   return chunks
 }
 
-async function parseExcelFile(buffer: ArrayBuffer, teamName?: string, chunkSize?: number) {
-  // This function is no longer used as the API now handles text directly.
-  // Keeping it for now in case it's called from elsewhere or for future use.
-  // For now, it will return an empty array as it's not directly integrated into the POST handler.
-  console.warn("parseExcelFile is deprecated and will return empty array.")
-  return { results: [] }
+function removeDuplicates(plays: ParsedPlay[]): ParsedPlay[] {
+  const seen = new Set<string>()
+  return plays.filter(play => {
+    const key = `${play.playerName}-${play.result}-${play.bbType || ''}-${play.inning || ''}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
-async function processTextData(text: string, gameInfo: any, teamName: string, chunkSize = 2000) {
-  try {
-    console.log(`Processing text data for team: ${teamName}, text length: ${text.length} chars`)
-    console.log("Full text being processed:", text)
-    
-    // Clean up the text - remove extra whitespace and normalize line endings
-    text = text.replace(/\r\n/g, '\n').replace(/\n+/g, '\n').trim()
-    
-    // Split text into chunks for processing
-    const chunks = chunkTextByLines(text, chunkSize)
-    console.log(`Split text into ${chunks.length} chunks`)
-    
-    // Process each chunk with AI
-    const allPlays: any[] = []
-    let processedChunks = 0
-    
-    for (const chunk of chunks) {
-      console.log(`\nProcessing chunk ${processedChunks + 1}/${chunks.length}:`)
-      console.log("Chunk content:", chunk)
-      
-      const plays = await processWithAI(chunk, gameInfo)
-      if (plays && Array.isArray(plays)) {
-        console.log(`Found ${plays.length} plays in chunk:`, JSON.stringify(plays, null, 2))
-        allPlays.push(...plays)
-      } else {
-        console.log("No plays found in chunk or invalid response")
-      }
-      processedChunks++
-      console.log(`Processed chunk ${processedChunks}/${chunks.length}, found ${plays?.length || 0} plays`)
+async function storePlays(plays: ParsedPlay[], teamName: string): Promise<any> {
+  let totalInserted = 0
+  let newPlayers = 0
+  let updatedPlayers = 0
+
+  // Create or get team
+  const team = await prisma.team.upsert({
+    where: { name: teamName },
+    update: {},
+    create: {
+      name: teamName,
+      color: `#${Math.floor(Math.random() * 16777215).toString(16)}`,
+      emoji: ["⚾", "🏟️", "🥎", "🏆"][Math.floor(Math.random() * 4)],
     }
-    
-    console.log(`\nTotal plays found: ${allPlays.length}`)
-    
-    if (allPlays.length === 0) {
-      console.log("No plays extracted from the text. Original text:", text)
-      return {
-        success: false,
-        message: "No plays were found in the imported data. The text was processed but no valid baseball plays were detected. Please check that the text contains play-by-play data in a readable format.",
-        plays: [],
-        inserted: 0,
-        newPlayers: 0,
-        updatedPlayers: 0,
-        teamName,
-        debug: {
-          textSample: text,
-          chunkCount: chunks.length,
-          chunks: chunks.map(chunk => ({ content: chunk }))
+  })
+
+  for (const play of plays) {
+    try {
+      // Normalize player name
+      const canonical = normalizePlayerName(play.playerName)
+
+      // Create or update player
+      const player = await prisma.player.upsert({
+        where: { canonical },
+        update: { teamId: team.id },
+        create: {
+          name: play.playerName,
+          canonical,
+          teamId: team.id,
         }
-      };
+      })
+
+      if (player.teamId !== team.id) {
+        updatedPlayers++
+      } else {
+        newPlayers++
+      }
+
+      // Add plate appearance
+      await prisma.plateAppearance.create({
+        data: {
+          playerId: player.id,
+          result: play.result,
+          bbType: play.bbType,
+          gameDate: play.gameDate || new Date().toISOString().split('T')[0],
+          inning: play.inning,
+          count: play.count,
+          pitchCount: play.pitchCount,
+          inPlay: play.inPlay,
+          exitVelocity: play.exitVelocity,
+          launchAngle: play.launchAngle,
+          distance: play.distance,
+          location: play.location,
+          contactType: play.contactType,
+          pitchType: play.pitchType,
+          rbi: play.rbi,
+          runs: play.runs,
+          isHomeRun: play.isHomeRun,
+          isStrikeout: play.isStrikeout,
+          isWalk: play.isWalk,
+          isHBP: play.isHBP,
+          isSacFly: play.isSacFly,
+          stolenBases: play.stolenBases,
+          caughtStealing: play.caughtStealing,
+          leverageIndex: play.leverageIndex,
+          clutchSituation: play.clutchSituation,
+        }
+      })
+
+      totalInserted++
+    } catch (error) {
+      console.error('Error processing play:', error, play)
     }
-    
-    // Log some example plays
-    if (allPlays.length > 0) {
-      console.log("Example plays:", JSON.stringify(allPlays.slice(0, 3), null, 2))
-    }
-    
-    // Process the parsed plays to update the database
-    const result = await db.processImportedData(allPlays, teamName)
-    
-    // Log database stats after import
-    const dbStats = db.getStats()
-    console.log("Database stats after import:", dbStats)
-    
-    // Check if players were actually added
-    const players = db.getPlayers()
-    console.log(`Total players in database: ${players.length}`)
-    
-    // Check if stats are being generated
-    const stats = db.getPlayerStats(0)
-    console.log(`Total player stats generated: ${stats.length}`)
-    
-    return {
-      success: true,
-      message: `Successfully processed ${allPlays.length} plays`,
-      plays: allPlays,
-      ...result
-    }
-  } catch (error) {
-    console.error("Error processing text data:", error)
-    throw error
+  }
+
+  return {
+    inserted: totalInserted,
+    newPlayers,
+    updatedPlayers,
+    teamName: team.name,
   }
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    console.log("Received parse request")
-    
-    // Check for OpenAI API key first
-    if (!OPENAI_API_KEY) {
-      return NextResponse.json({ 
-        error: "OpenAI API key is required for data processing. Please set the OPENAI_API_KEY environment variable.",
-        code: "OPENAI_API_KEY_MISSING"
-      }, { status: 400 })
-    }
-    
-    // Check if it's a multipart form data (file upload) or JSON (raw text)
-    const contentType = request.headers.get("content-type") || ""
-    console.log("Content-Type:", contentType)
-    
-    let text: string
-    let teamName: string | undefined
-    let chunkSize: number = 4000
-
-    if (contentType.includes("multipart/form-data")) {
-      console.log("Processing multipart form data")
-      const formData = await request.formData()
-      const file = formData.get("file") as File
-      
-      if (!file) {
-        console.error("No file provided in form data")
-        return NextResponse.json({ error: "No file provided" }, { status: 400 })
-      }
-
-      text = await file.text()
-      teamName = formData.get("teamOverride") as string || undefined
-      chunkSize = Number(formData.get("chunkSize")) || 4000
-      
-      console.log("File processed, text length:", text.length)
-    } else {
-      console.log("Processing JSON request")
-      const body = await request.json()
-      console.log("Request body:", body)
-      
-      if (!body.rawText || typeof body.rawText !== 'string') {
-        console.error("No valid text provided in JSON body")
-        return NextResponse.json({ error: "No valid text provided" }, { status: 400 })
-      }
-
-      text = body.rawText
-      teamName = body.teamOverride
-      chunkSize = body.chunkSize || 4000
-      
-      console.log("JSON processed, text length:", text.length)
-    }
-
-    // Clean up the text
-    text = text.replace(/<[^>]*>/g, '') // Remove HTML tags
-             .replace(/\r\n/g, '\n')     // Normalize line endings
-             .trim()
-
-    if (!text) {
-      console.error("No valid text content after cleaning")
-      return NextResponse.json({ error: "No valid text content found after cleaning" }, { status: 400 })
-    }
-
-    console.log("Processing text with AI, length:", text.length)
-
-    // Process the text data
-    const result = await processTextData(text, {
-      gameDate: new Date().toISOString().split('T')[0],
-      teams: [teamName || "Unknown Team"]
-    }, teamName || "Unknown Team", chunkSize)
-
-    console.log("Processing complete, plays found:", result.plays?.length || 0)
-
-    return NextResponse.json(result)
-  } catch (error) {
-    console.error("Error in parse route:", error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to process data" },
-      { status: 500 }
-    )
-  }
+function normalizePlayerName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }

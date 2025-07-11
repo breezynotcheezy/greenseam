@@ -1,65 +1,157 @@
-import { NextRequest, NextResponse } from "next/server"
-import { db } from "@/lib/database"
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { calculateWOBA, calculateWRAA, calculateWRCPlus, calculateContactQuality, calculateSituationalStats, calculatePlayerZScores } from "@/lib/stats-utils";
+import type { BaseballStats, Player, PlateAppearance } from "@/lib/types";
 
-// Format stat with leading zero and 3 decimal places
-function formatStat(value: number): string {
-  const formatted = value.toFixed(3)
-  return value < 1 ? formatted.substring(1) : formatted
-}
-
-export const runtime = "nodejs"
-
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url)
-    const teamId = searchParams.get("teamId")
-    const minPA = Number.parseInt(searchParams.get("minPA") || "0")
+    const { searchParams } = new URL(request.url);
+    const teamId = searchParams.get('teamId');
+    const minPA = parseInt(searchParams.get('minPA') || '1');
 
-    // Check if we have any data
-    const dbStats = db.getStats()
-    if (dbStats.plateAppearances === 0) {
-      return NextResponse.json({ 
-        error: "No data available. Please import some data first.",
-        code: "NO_DATA"
-      }, { status: 404 })
+    // Build the where clause for filtering
+    const whereClause: any = {};
+    
+    if (teamId && teamId !== 'all') {
+      whereClause.teamId = parseInt(teamId);
     }
 
-    let stats = db.getPlayerStats(minPA)
+    const players = await prisma.player.findMany({
+      where: whereClause,
+      include: {
+        team: true,
+        plateAppearances: true,
+      },
+    });
 
-    // Filter by team if specified
-    if (teamId && teamId !== "all") {
-      stats = stats.filter((stat) => stat.team.id === teamId)
-    }
+    const hitters = players
+      .map((player: Player) => {
+        const { plateAppearances } = player;
+        
+        // Skip players with fewer than minPA plate appearances
+        if (plateAppearances.length < minPA) {
+          return null;
+        }
+        
+        // Basic counting stats
+        const hits = plateAppearances.filter((pa: PlateAppearance) => pa.result === "Hit").length;
+        const walks = plateAppearances.filter((pa: PlateAppearance) => pa.isWalk).length;
+        const strikeouts = plateAppearances.filter((pa: PlateAppearance) => pa.isStrikeout).length;
+        const hbp = plateAppearances.filter((pa: PlateAppearance) => pa.isHBP).length;
+        const sacrificeFlies = plateAppearances.filter((pa: PlateAppearance) => pa.isSacFly).length;
+        const doubles = plateAppearances.filter((pa: PlateAppearance) => pa.bbType === "2B").length;
+        const triples = plateAppearances.filter((pa: PlateAppearance) => pa.bbType === "3B").length;
+        const homeRuns = plateAppearances.filter((pa: PlateAppearance) => pa.isHomeRun).length;
+        const singles = hits - (doubles + triples + homeRuns);
+        const atBats = plateAppearances.length - walks - hbp - sacrificeFlies;
 
-    // Format for frontend
-    const hitters = stats.map((stat) => ({
-      id: stat.playerId,
-      name: stat.name,
-      team: stat.team,
-      paCount: stat.paCount,
-      avg: formatStat(stat.avg),
-      kRate: Math.round(stat.kRate),
-      gbPercent: Math.round(stat.gbPercent),
-      ldPercent: Math.round(stat.ldPercent),
-      fbPercent: Math.round(stat.fbPercent),
-      obp: formatStat(stat.obp),
-      slg: formatStat(stat.slg),
-      ops: formatStat(stat.ops),
-      bbRate: Math.round(stat.bbRate),
-      hits: stat.hits,
-      walks: stat.walks,
-      strikeouts: stat.strikeouts,
-      doubles: stat.doubles,
-      triples: stat.triples,
-      homeRuns: stat.homeRuns,
-    }))
+        // Calculate percentages
+        const avg = atBats > 0 ? hits / atBats : 0;
+        const obp = (plateAppearances.length - sacrificeFlies) > 0 
+          ? (hits + walks + hbp) / (atBats + walks + hbp) 
+          : 0;
+        const slg = atBats > 0 
+          ? (singles + 2 * doubles + 3 * triples + 4 * homeRuns) / atBats 
+          : 0;
+        const ops = obp + slg;
+        const kRate = plateAppearances.length > 0 ? (strikeouts / plateAppearances.length) * 100 : 0;
+        const bbRate = plateAppearances.length > 0 ? (walks / plateAppearances.length) * 100 : 0;
 
-    return NextResponse.json(hitters)
+        // Calculate batted ball distribution
+        const inPlayPAs = plateAppearances.filter((pa: PlateAppearance) => pa.inPlay);
+        const groundBalls = inPlayPAs.filter((pa: PlateAppearance) => pa.bbType?.toLowerCase().includes("ground")).length;
+        const lineDrives = inPlayPAs.filter((pa: PlateAppearance) => pa.bbType?.toLowerCase().includes("line")).length;
+        const flyBalls = inPlayPAs.filter((pa: PlateAppearance) => pa.bbType?.toLowerCase().includes("fly")).length;
+        const totalBBs = groundBalls + lineDrives + flyBalls;
+
+        const gbPercent = totalBBs > 0 ? (groundBalls / totalBBs) * 100 : 0;
+        const ldPercent = totalBBs > 0 ? (lineDrives / totalBBs) * 100 : 0;
+        const fbPercent = totalBBs > 0 ? (flyBalls / totalBBs) * 100 : 0;
+
+        // Calculate advanced metrics
+        const woba = calculateWOBA({
+          walks,
+          hbp,
+          singles,
+          doubles,
+          triples,
+          homeRuns,
+          atBats,
+          sacrificeFlies,
+        });
+
+        const wraa = calculateWRAA(woba, plateAppearances.length);
+        const wrcPlus = calculateWRCPlus(wraa, plateAppearances.length);
+
+        // Calculate contact quality metrics
+        const contactQuality = calculateContactQuality(plateAppearances);
+
+        // Calculate situational stats
+        const situationalStats = calculateSituationalStats(plateAppearances);
+
+        const stats: BaseballStats = {
+          // Basic stats
+          avg,
+          obp,
+          slg,
+          ops,
+          hits,
+          walks,
+          strikeouts,
+          doubles,
+          triples,
+          homeRuns,
+          atBats,
+          plateAppearances: plateAppearances.length,
+          kRate,
+          bbRate,
+
+          // Advanced stats
+          woba,
+          wraa,
+          wrcPlus,
+
+          // Contact quality
+          hardContact: contactQuality.hardContact || 0,
+          mediumContact: contactQuality.mediumContact || 0,
+          softContact: contactQuality.softContact || 0,
+          gbPercent,
+          ldPercent,
+          fbPercent,
+
+          // Situational stats
+          clutchPerformance: situationalStats.clutchPerformance || 0,
+          leverageIndex: plateAppearances.reduce((sum, pa) => sum + (pa.leverageIndex || 0), 0) / plateAppearances.length,
+          zScore: 0, // Will be updated after all players are processed
+        };
+
+        return {
+          id: player.id.toString(),
+          name: player.name,
+          team: {
+            ...player.team,
+            id: player.team?.id?.toString() || "1"
+          },
+          stats,
+        };
+      })
+      .filter(Boolean); // Remove null entries
+
+    // Calculate z-scores across all players
+    const zScores = calculatePlayerZScores(hitters);
+    
+    // Update player stats with z-scores
+    const hittersWithZScores = hitters.map((hitter: { id: string; name: string; team: any; stats: BaseballStats }, index: number) => ({
+      ...hitter,
+      stats: {
+        ...hitter.stats,
+        zScore: zScores[index]?.zScore || 0,
+      },
+    }));
+
+    return NextResponse.json(hittersWithZScores);
   } catch (error) {
-    console.error("Hitters API error:", error)
-    return NextResponse.json({ 
-      error: "Failed to fetch hitters",
-      code: "FETCH_ERROR"
-    }, { status: 500 })
+    console.error("Error fetching hitters:", error);
+    return NextResponse.json({ error: "Failed to fetch hitters" }, { status: 500 });
   }
 }

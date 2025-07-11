@@ -192,7 +192,7 @@ export default function PlayersPage() {
 
         <div className="min-w-[150px]">
           <Label htmlFor="min-pa">Minimum PA: {minPA[0]}</Label>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 h-10">
             <Slider 
               id="min-pa"
               value={minPA} 
@@ -219,19 +219,6 @@ export default function PlayersPage() {
             </SelectContent>
           </Select>
         </div>
-        
-        <div className="min-w-[120px]">
-          <Label htmlFor="refresh-button" className="mb-2 block">Refresh Data</Label>
-          <Button 
-            id="refresh-button"
-            variant="default" 
-            onClick={handleRefresh}
-            className="w-full"
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
-        </div>
       </div>
 
       {/* Results */}
@@ -239,15 +226,6 @@ export default function PlayersPage() {
         <p className="text-sm text-muted-foreground">
           {filteredPlayers?.length || 0} player{(!filteredPlayers || filteredPlayers.length !== 1) ? "s" : ""} found
         </p>
-        <Button 
-          variant="outline" 
-          size="sm"
-          onClick={handleRefresh}
-          disabled={isLoading}
-        >
-          <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-          Refresh Data
-        </Button>
       </div>
 
       {/* Error state */}

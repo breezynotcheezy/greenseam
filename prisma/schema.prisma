@@ -7,7 +7,7 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
+  url      = "file:./data/dev.db"
 }
 
 model Team {
@@ -24,16 +24,36 @@ model Player {
   canonical        String            @unique
   teamId           Int?
   team             Team?             @relation(fields: [teamId], references: [id])
-  plateAppearances PlateAppearance[] @relation("PlayerPlateAppearances")
+  plateAppearances PlateAppearance[]
 }
 
 model PlateAppearance {
-  id       Int     @id @default(autoincrement())
-  playerId Int     @map("player_id")
-  player   Player  @relation("PlayerPlateAppearances", fields: [playerId], references: [id])
-  result   String
-  bbType   String?
-  gameDate String
+  id              Int      @id @default(autoincrement())
+  playerId        Int
+  player          Player   @relation(fields: [playerId], references: [id])
+  result          String
+  bbType          String?
+  gameDate        String
+  inning          Int?
+  count           String?
+  pitchCount      Int?
+  inPlay          Boolean
+  exitVelocity    Float?
+  launchAngle     Float?
+  distance        Float?
+  location        String?
+  contactType     String?
+  pitchType       String?
+  rbi             Int
+  runs            Int
+  isHomeRun       Boolean
+  isStrikeout     Boolean
+  isWalk          Boolean
+  isHBP           Boolean
+  isSacFly        Boolean
+  stolenBases     Int
+  caughtStealing  Int
+  leverageIndex   Float?
+  clutchSituation String?
+  createdAt       DateTime @default(now())
 }
-
-// This file has been removed - using in-memory database instead
