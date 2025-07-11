@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/database'
 import { calculateStats } from '@/lib/stats'
 import { BaseballStats } from '@/lib/types'
+import { prisma } from "@/lib/prisma";
 
 interface Player {
   id: number
@@ -107,5 +108,34 @@ export async function POST(request: Request) {
       { error: 'Failed to create player' },
       { status: 500 }
     )
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const playerId = searchParams.get("id");
+
+    if (!playerId) {
+      return NextResponse.json({ error: "Player ID required" }, { status: 400 });
+    }
+
+    // First delete all plate appearances for this player
+    await prisma.plateAppearance.deleteMany({
+      where: { playerId: parseInt(playerId) },
+    });
+
+    // Then delete the player
+    await prisma.player.delete({
+      where: { id: parseInt(playerId) },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Failed to delete player:", error);
+    return NextResponse.json(
+      { error: "Failed to delete player" },
+      { status: 500 }
+    );
   }
 } 

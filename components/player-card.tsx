@@ -5,6 +5,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PlayerDetails } from "@/components/player-details"
 import { PlayerStats } from "@/components/player-stats"
 import { PlayerInsights } from "@/components/player-insights"
+import { Trash2 } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface PlayerCardProps {
   player: {
@@ -37,6 +49,39 @@ interface PlayerCardProps {
 
 export function PlayerCard({ player }: PlayerCardProps) {
   const [activeTab, setActiveTab] = useState("stats")
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const { toast } = useToast()
+
+  const handleDelete = async () => {
+    setIsDeleting(true)
+    try {
+      const response = await fetch(`/api/players?id=${player.id}`, {
+        method: "DELETE",
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to delete player")
+      }
+
+      toast({
+        title: "Player deleted",
+        description: `${player.name} has been removed successfully.`,
+      })
+      
+      // Optionally refresh the page or trigger a parent component refresh
+      window.location.reload()
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete player. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsDeleting(false)
+      setShowDeleteDialog(false)
+    }
+  }
 
   // Format numeric values
   const formatStat = (value: number | string, decimals = 3): string => {
@@ -72,10 +117,13 @@ export function PlayerCard({ player }: PlayerCardProps) {
             {player.team.emoji} {player.team.name}
           </p>
         </div>
-        <div className="text-right">
-          <div className="text-lg font-bold">{formatStat(player.avg)}</div>
-          <div className="text-xs text-gray-500">{player.paCount} PA</div>
-        </div>
+        <button
+          onClick={() => setShowDeleteDialog(true)}
+          className="text-red-500 hover:text-red-700 transition-colors"
+          aria-label="Delete player"
+        >
+          <Trash2 className="h-5 w-5" />
+        </button>
       </div>
 
       <Tabs defaultValue="stats" value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -100,6 +148,27 @@ export function PlayerCard({ player }: PlayerCardProps) {
           <PlayerInsights playerId={player.id} />
         </TabsContent>
       </Tabs>
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Player?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete {player.name} and all their stats. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-500"
+            >
+              {isDeleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

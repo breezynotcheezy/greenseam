@@ -9,10 +9,12 @@ interface PlayerInsightsProps {
 }
 
 interface InsightsData {
-  insight: string
-  recommendation: string
-  strengths: string[]
-  weaknesses: string[]
+  insight: string;
+  pitchingRecommendation?: string;
+  fieldingRecommendation?: string;
+  strengths: string[];
+  weaknesses: string[];
+  confidence?: number;
 }
 
 export function PlayerInsights({ playerId }: PlayerInsightsProps) {
@@ -96,16 +98,46 @@ export function PlayerInsights({ playerId }: PlayerInsightsProps) {
         </div>
       </div>
 
-      {/* Tactical Recommendation */}
-      <div>
-        <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-          <Target className="h-4 w-4 text-blue-600" />
-          Tactical Approach
-        </h4>
-        <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-          <p className="text-sm text-blue-800 font-medium">{insights.recommendation}</p>
+      {/* Pitching Recommendation with Confidence Circle */}
+      {insights.pitchingRecommendation && (
+        <div>
+          <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <Target className="h-4 w-4 text-blue-600" />
+            Pitching Recommendation
+            {typeof insights.confidence === 'number' && (
+              <span title={`Confidence: ${(insights.confidence * 100).toFixed(0)}%`} className="ml-2 flex items-center">
+                <span
+                  className={
+                    'inline-block w-4 h-4 rounded-full border-2 border-white shadow ' +
+                    (insights.confidence >= 0.8
+                      ? 'bg-blue-500'
+                      : insights.confidence >= 0.5
+                      ? 'bg-yellow-400'
+                      : 'bg-red-500')
+                  }
+                />
+                <span className="ml-1 text-xs text-gray-600">{(insights.confidence * 100).toFixed(0)}%</span>
+              </span>
+            )}
+          </h4>
+          <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+            <p className="text-sm text-blue-800 font-medium">{insights.pitchingRecommendation}</p>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Fielding Recommendation */}
+      {insights.fieldingRecommendation && (
+        <div>
+          <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <Target className="h-4 w-4 text-green-600" />
+            Fielding Recommendation
+          </h4>
+          <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+            <p className="text-sm text-green-800 font-medium">{insights.fieldingRecommendation}</p>
+          </div>
+        </div>
+      )}
 
       {/* Strengths & Weaknesses */}
       <div className="grid grid-cols-2 gap-4">
