@@ -10,45 +10,51 @@ export default function Home() {
       <p className="text-xl text-gray-600 max-w-2xl mb-10">Advanced baseball analytics for strategic insights. Import GameChanger data and analyze player performance with AI-powered tools.</p>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-4xl w-full mt-8">
-        <Card className="shadow-md border border-gray-100 bg-white hover:shadow-lg transition-shadow">
-          <CardHeader className="pb-2">
+        <Card className="shadow-md border border-gray-100 bg-white hover:shadow-lg transition-shadow flex flex-col">
+          <CardHeader className="pb-2 flex-1">
             <CardTitle className="flex items-center gap-2 text-xl text-forest-700">
               <FileText className="h-5 w-5 text-forest-500" />
               Import Data
             </CardTitle>
-            <CardDescription>Upload GameChanger files for analysis</CardDescription>
+            <CardDescription className="min-h-[48px] flex items-center justify-center">
+              Upload GameChanger files for analysis
+            </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-2">
             <Link href="/import" className="w-full">
               <Button variant="outline" className="w-full bg-forest-50 hover:bg-forest-100 text-forest-700 border-forest-200">Go to Import</Button>
             </Link>
           </CardContent>
         </Card>
         
-        <Card className="shadow-md border border-gray-100 bg-white hover:shadow-lg transition-shadow">
-          <CardHeader className="pb-2">
+        <Card className="shadow-md border border-gray-100 bg-white hover:shadow-lg transition-shadow flex flex-col">
+          <CardHeader className="pb-2 flex-1">
             <CardTitle className="flex items-center gap-2 text-xl text-blue-700">
               <Users className="h-5 w-5 text-blue-500" />
               Player Cards
             </CardTitle>
-            <CardDescription>View detailed player analytics</CardDescription>
+            <CardDescription className="min-h-[48px] flex items-center justify-center">
+              View detailed player analytics
+            </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-2">
             <Link href="/players" className="w-full">
               <Button variant="outline" className="w-full bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200">View Players</Button>
             </Link>
           </CardContent>
         </Card>
         
-        <Card className="shadow-md border border-gray-100 bg-white hover:shadow-lg transition-shadow">
-          <CardHeader className="pb-2">
+        <Card className="shadow-md border border-gray-100 bg-white hover:shadow-lg transition-shadow flex flex-col">
+          <CardHeader className="pb-2 flex-1">
             <CardTitle className="flex items-center gap-2 text-xl text-amber-700">
               <Zap className="h-5 w-5 text-amber-500" />
               Hitter Insights
             </CardTitle>
-            <CardDescription>Analyze opponent hitter patterns</CardDescription>
+            <CardDescription className="min-h-[48px] flex items-center justify-center">
+              Analyze opponent hitter patterns
+            </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-2">
             <Link href="/hitters" className="w-full">
               <Button variant="outline" className="w-full bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200">Analyze Hitters</Button>
             </Link>
