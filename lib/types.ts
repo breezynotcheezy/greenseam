@@ -97,6 +97,27 @@ export interface ParsedPlay {
   isError: boolean;
   bases: number;
   type: 'single' | 'double' | 'triple' | 'homer' | 'out' | 'error';
+  
+  // Database properties
+  pitchCount?: number;
+  inPlay?: boolean;
+  exitVelocity?: number;
+  launchAngle?: number;
+  distance?: number;
+  location?: string;
+  contactType?: string;
+  pitchType?: string;
+  rbi?: number;
+  runs?: number;
+  isHomeRun?: boolean;
+  isStrikeout?: boolean;
+  isWalk?: boolean;
+  isHBP?: boolean;
+  isSacFly?: boolean;
+  stolenBases?: number;
+  caughtStealing?: number;
+  leverageIndex?: number;
+  clutchSituation?: string;
 }
 
 export interface GameInfo {

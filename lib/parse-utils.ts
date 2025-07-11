@@ -103,17 +103,7 @@ export const BALL_TYPE_MAP = {
   "home run to center": "HR",
 }
 
-export interface ParsedPlay {
-  playerName: string
-  result: string
-  bbType?: string
-  gameDate?: string
-  inning?: number
-  count?: string
-  situation?: string
-  pitchType?: string
-  location?: string
-}
+// ParsedPlay interface is now defined in types.ts
 
 // Utility functions for parsing GameChanger data
 
@@ -224,33 +214,34 @@ export function filterPlaysByPlayerNames(plays: ParsedPlay[], playerNames: strin
 // Classify hits and errors
 export function parsePlayResult(text: string): ParsedPlay {
   const result: ParsedPlay = {
+    playerName: text.split(" ")[0],
+    result: text,
     isHit: false,
     isError: false,
     bases: 0,
-    type: "out",
-    // Map to old properties for compatibility
-    result: text,
-    playerName: text.split(" ")[0]
+    type: "out"
   };
 
   // Detect hits (e.g., "hits a single", "hits a ground ball")
   if (
     text.includes("hits a single") ||
     text.includes("hits a ground ball") ||
-    text.includes("hits a line drive")
+    text.includes("hits a line drive") ||
+    text.includes("singled") ||
+    text.includes("hit a single")
   ) {
     result.isHit = true;
     result.bases = 1;
     result.type = "single";
-  } else if (text.includes("hits a double")) {
+  } else if (text.includes("hits a double") || text.includes("doubled") || text.includes("hit a double")) {
     result.isHit = true;
     result.bases = 2;
     result.type = "double";
-  } else if (text.includes("hits a triple")) {
+  } else if (text.includes("hits a triple") || text.includes("tripled") || text.includes("hit a triple")) {
     result.isHit = true;
     result.bases = 3;
     result.type = "triple";
-  } else if (text.includes("hits a home run")) {
+  } else if (text.includes("hits a home run") || text.includes("homered") || text.includes("hit a home run")) {
     result.isHit = true;
     result.bases = 4;
     result.type = "homer";
@@ -369,9 +360,8 @@ export function normalizeBallType(bbType: string | undefined): string | undefine
 
 export function countTokens(text: string): number {
   try {
-    const encoding = getEncoding("cl100k_base")
-    const tokens = encoding.encode(text)
-    return tokens.length
+    // Fallback to character-based estimation
+    return Math.ceil(text.length / 4)
   } catch (error) {
     return Math.ceil(text.length / 4)
   }
@@ -526,7 +516,7 @@ export function extractPlaysFromText(text: string): ParsedPlay[] {
   const gameInfo = extractGameInfo(text);
   
   // Common patterns in GameChanger data
-  const playerActionPattern = /([A-Za-z\s\-.]+)\s+(singled|doubled|tripled|homered|grounded|flied|lined|popped|walked|struck out|hit by pitch)/i;
+  const playerActionPattern = /([A-Za-z\s\-.]+)\s+(singled|doubled|tripled|homered|grounded|flied|lined|popped|struck out|hit by pitch)/i;
   const countPattern = /\((\d-\d)\)/;
   const inningPattern = /inning\s+(\d+)|(\d+)(st|nd|rd|th)\s+inning/i;
   const situationPattern = /(runner(s)? on|bases loaded|no outs|1 out|2 outs)/i;
@@ -566,8 +556,6 @@ export function extractPlaysFromText(text: string): ParsedPlay[] {
       } else if (action.includes("homered")) {
         result = "Hit";
         bbType = "HR";
-      } else if (action.includes("walked")) {
-        result = "Walk";
       } else if (action.includes("struck out")) {
         result = "K";
       } else if (action.includes("hit by pitch")) {
@@ -591,7 +579,11 @@ export function extractPlaysFromText(text: string): ParsedPlay[] {
           playerName,
           result,
           gameDate: gameInfo.gameDate,
-          inning: currentInning
+          inning: currentInning,
+          isHit: result === "Hit",
+          isError: false,
+          bases: bbType === "1B" ? 1 : bbType === "2B" ? 2 : bbType === "3B" ? 3 : bbType === "HR" ? 4 : 0,
+          type: bbType === "1B" ? "single" : bbType === "2B" ? "double" : bbType === "3B" ? "triple" : bbType === "HR" ? "homer" : "out"
         };
         
         if (bbType) {

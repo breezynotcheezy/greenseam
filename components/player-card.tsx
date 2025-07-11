@@ -52,7 +52,6 @@ export function PlayerCard({ player }: PlayerCardProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const { toast } = useToast()
-
   const handleDelete = async () => {
     setIsDeleting(true)
     try {

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { db } from '@/lib/database'
 import { prisma } from '@/lib/prisma'
+import { parsePlayResult, normalizePlayerName, extractPlaysFromText } from '@/lib/parse-utils'
+import { ParsedPlay } from '@/lib/types'
 
 // Initialize OpenAI
 const openai = new OpenAI({
@@ -10,35 +12,6 @@ const openai = new OpenAI({
 
 // Maximum chunk size for OpenAI API
 const MAX_CHUNK_SIZE = 2000
-
-interface ParsedPlay {
-  playerName: string
-  result: string
-  bbType?: string
-  gameDate?: string
-  inning?: number
-  count?: string
-  situation?: string
-  pitchCount?: number
-  inPlay: boolean
-  exitVelocity?: number
-  launchAngle?: number
-  distance?: number
-  location?: string
-  contactType?: string
-  pitchType?: string
-  rbi: number
-  runs: number
-  isHomeRun: boolean
-  isStrikeout: boolean
-  isWalk: boolean
-  isHBP: boolean
-  isSacFly: boolean
-  stolenBases: number
-  caughtStealing: number
-  leverageIndex?: number
-  clutchSituation?: string
-}
 
 export async function POST(request: Request) {
   try {
@@ -86,18 +59,20 @@ export async function POST(request: Request) {
       .replace(/\n+/g, '\n')
       .trim();
 
-    // Split text into chunks
-    const chunks = splitIntoChunks(cleanText, MAX_CHUNK_SIZE);
-    const allPlays: ParsedPlay[] = [];
-
-    // Process each chunk
-    for (const chunk of chunks) {
-      const plays = await parseChunk(chunk);
-      allPlays.push(...plays);
-    }
+    // Use our improved parsing logic instead of OpenAI
+    const plays = extractPlaysFromText(cleanText);
+    
+    // Apply our enhanced parsing to each play
+    const enhancedPlays = plays.map(play => {
+      const enhanced = parsePlayResult(play.result || '');
+      return {
+        ...play,
+        ...enhanced
+      };
+    });
 
     // Remove duplicates
-    const uniquePlays = removeDuplicates(allPlays);
+    const uniquePlays = removeDuplicates(enhancedPlays);
 
     // Store plays in database
     const result = await storePlays(uniquePlays, teamName);
@@ -114,135 +89,6 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-}
-
-async function parseChunk(text: string): Promise<ParsedPlay[]> {
-  try {
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [
-        {
-          role: 'system',
-          content: `You are a baseball statistician that extracts play-by-play data. For each plate appearance, extract:
-- Player name
-- Result (Hit, Out, K, Walk, HBP)
-- Ball type (Ground, Line, Fly, 2B, 3B, HR)
-- Game situation (inning, count, runners on base)
-- Advanced metrics (exit velocity, launch angle, contact quality)
-- Base running (stolen bases, caught stealing)
-- Run production (RBI, runs scored)
-
-Format each play as a JSON object with these fields:
-{
-  playerName: string,
-  result: string,
-  bbType?: string,
-  gameDate?: string,
-  inning?: number,
-  count?: string,
-  situation?: string,
-  pitchCount?: number,
-  inPlay: boolean,
-  exitVelocity?: number,
-  launchAngle?: number,
-  distance?: number,
-  location?: string,
-  contactType?: string,
-  pitchType?: string,
-  rbi: number,
-  runs: number,
-  isHomeRun: boolean,
-  isStrikeout: boolean,
-  isWalk: boolean,
-  isHBP: boolean,
-  isSacFly: boolean,
-  stolenBases: number,
-  caughtStealing: number,
-  leverageIndex?: number,
-  clutchSituation?: string
-}
-
-Return an array of these objects, one for each plate appearance.
-
-Example input:
-"Frank F strikes out. The player on first advances to second on a stolen base. John K is up next. John K hits a pop fly to center field and gets out."
-
-Example output:
-[
-  {
-    "playerName": "Frank F",
-    "result": "K",
-    "isStrikeout": true,
-    "inPlay": false,
-    "rbi": 0,
-    "runs": 0,
-    "isHomeRun": false,
-    "isWalk": false,
-    "isHBP": false,
-    "isSacFly": false,
-    "stolenBases": 0,
-    "caughtStealing": 0
-  },
-  {
-    "playerName": "John K",
-    "result": "Out",
-    "bbType": "Fly",
-    "location": "CF",
-    "inPlay": true,
-    "contactType": "Medium",
-    "rbi": 0,
-    "runs": 0,
-    "isHomeRun": false,
-    "isStrikeout": false,
-    "isWalk": false,
-    "isHBP": false,
-    "isSacFly": false,
-    "stolenBases": 0,
-    "caughtStealing": 0
-  }
-]`
-        },
-        {
-          role: 'user',
-          content: text
-        }
-      ],
-      temperature: 0,
-    })
-
-    const result = completion.choices[0]?.message?.content
-    if (!result) {
-      throw new Error('No response from OpenAI')
-    }
-
-    try {
-      return JSON.parse(result)
-    } catch (error) {
-      console.error('Failed to parse OpenAI response:', result)
-      throw new Error('Invalid response format from OpenAI')
-    }
-  } catch (error: any) {
-    console.error('OpenAI API error:', error)
-    throw new Error(error.message || 'Failed to parse chunk')
-  }
-}
-
-function splitIntoChunks(text: string, maxSize: number): string[] {
-  const chunks: string[] = []
-  const sentences = text.split(/[.!?]+\s+/)
-  let currentChunk = ''
-
-  for (const sentence of sentences) {
-    if (currentChunk.length + sentence.length > maxSize) {
-      if (currentChunk) chunks.push(currentChunk.trim())
-      currentChunk = sentence
-    } else {
-      currentChunk += (currentChunk ? ' ' : '') + sentence
-    }
-  }
-
-  if (currentChunk) chunks.push(currentChunk.trim())
-  return chunks
 }
 
 function removeDuplicates(plays: ParsedPlay[]): ParsedPlay[] {
@@ -274,14 +120,14 @@ async function storePlays(plays: ParsedPlay[], teamName: string): Promise<any> {
   for (const play of plays) {
     try {
       // Normalize player name
-      const canonical = normalizePlayerName(play.playerName)
+      const canonical = normalizePlayerName(play.playerName || '')
 
       // Create or update player
       const player = await prisma.player.upsert({
         where: { canonical },
         update: { teamId: team.id },
         create: {
-          name: play.playerName,
+          name: play.playerName || '',
           canonical,
           teamId: team.id,
         }
@@ -293,32 +139,32 @@ async function storePlays(plays: ParsedPlay[], teamName: string): Promise<any> {
         newPlayers++
       }
 
-      // Add plate appearance
+      // Add plate appearance with enhanced data
       await prisma.plateAppearance.create({
         data: {
           playerId: player.id,
-          result: play.result,
+          result: play.result || '',
           bbType: play.bbType,
           gameDate: play.gameDate || new Date().toISOString().split('T')[0],
           inning: play.inning,
           count: play.count,
           pitchCount: play.pitchCount,
-          inPlay: play.inPlay,
+          inPlay: play.inPlay || false,
           exitVelocity: play.exitVelocity,
           launchAngle: play.launchAngle,
           distance: play.distance,
           location: play.location,
           contactType: play.contactType,
           pitchType: play.pitchType,
-          rbi: play.rbi,
-          runs: play.runs,
-          isHomeRun: play.isHomeRun,
-          isStrikeout: play.isStrikeout,
-          isWalk: play.isWalk,
-          isHBP: play.isHBP,
-          isSacFly: play.isSacFly,
-          stolenBases: play.stolenBases,
-          caughtStealing: play.caughtStealing,
+          rbi: play.rbi || 0,
+          runs: play.runs || 0,
+          isHomeRun: play.isHomeRun || play.type === 'homer',
+          isStrikeout: play.isStrikeout || play.result === 'K',
+          isWalk: play.isWalk || play.result === 'Walk',
+          isHBP: play.isHBP || play.result === 'HBP',
+          isSacFly: play.isSacFly || false,
+          stolenBases: play.stolenBases || 0,
+          caughtStealing: play.caughtStealing || 0,
           leverageIndex: play.leverageIndex,
           clutchSituation: play.clutchSituation,
         }
@@ -336,12 +182,4 @@ async function storePlays(plays: ParsedPlay[], teamName: string): Promise<any> {
     updatedPlayers,
     teamName: team.name,
   }
-}
-
-function normalizePlayerName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
 }
