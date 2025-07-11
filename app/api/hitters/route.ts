@@ -149,7 +149,31 @@ export async function GET(request: Request) {
       },
     }));
 
-    return NextResponse.json(hittersWithZScores);
+    // FLATTEN stats into the root object for frontend compatibility
+    const flattenedHitters = hittersWithZScores.map((hitter: { id: string; name: string; team: any; stats: BaseballStats }) => ({
+      id: hitter.id,
+      name: hitter.name,
+      team: hitter.team,
+      paCount: hitter.stats.plateAppearances,
+      avg: hitter.stats.avg.toFixed(3),
+      kRate: Number(hitter.stats.kRate.toFixed(1)),
+      gbPercent: Number(hitter.stats.gbPercent.toFixed(1)),
+      ldPercent: Number(hitter.stats.ldPercent.toFixed(1)),
+      fbPercent: Number(hitter.stats.fbPercent.toFixed(1)),
+      obp: hitter.stats.obp.toFixed(3),
+      slg: hitter.stats.slg.toFixed(3),
+      ops: hitter.stats.ops.toFixed(3),
+      bbRate: Number(hitter.stats.bbRate.toFixed(1)),
+      hits: hitter.stats.hits,
+      walks: hitter.stats.walks,
+      strikeouts: hitter.stats.strikeouts,
+      doubles: hitter.stats.doubles,
+      triples: hitter.stats.triples,
+      homeRuns: hitter.stats.homeRuns,
+      // Optionally include zScore or other stats if needed
+    }));
+
+    return NextResponse.json(flattenedHitters);
   } catch (error) {
     console.error("Error fetching hitters:", error);
     return NextResponse.json({ error: "Failed to fetch hitters" }, { status: 500 });
