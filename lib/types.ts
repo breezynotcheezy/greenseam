@@ -83,13 +83,20 @@ export interface PlateAppearance {
 }
 
 export interface ParsedPlay {
-  playerName: string;
-  result: string;
+  // Old properties (keep for backward compatibility)
+  playerName?: string;
+  result?: string;
   bbType?: string;
-  gameDate: string;
-  inning: number;
+  gameDate?: string;
+  inning?: number;
   count?: string;
   situation?: string;
+  
+  // New properties for our parsing system
+  isHit: boolean;
+  isError: boolean;
+  bases: number;
+  type: 'single' | 'double' | 'triple' | 'homer' | 'out' | 'error';
 }
 
 export interface GameInfo {

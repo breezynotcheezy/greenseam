@@ -1,4 +1,4 @@
-import { getEncoding } from "js-tiktoken"
+import { ParsedPlay } from "./types";
 
 // Enhanced outcome mapping for GameChanger data
 export const OUTCOME_MAP = {
@@ -221,17 +221,55 @@ export function filterPlaysByPlayerNames(plays: ParsedPlay[], playerNames: strin
   });
 }
 
-/**
- * Normalize player names for consistent comparison
- * @param name The player name to normalize
- * @returns Normalized player name
- */
+// Classify hits and errors
+export function parsePlayResult(text: string): ParsedPlay {
+  const result: ParsedPlay = {
+    isHit: false,
+    isError: false,
+    bases: 0,
+    type: "out",
+    // Map to old properties for compatibility
+    result: text,
+    playerName: text.split(" ")[0]
+  };
+
+  // Detect hits (e.g., "hits a single", "hits a ground ball")
+  if (
+    text.includes("hits a single") ||
+    text.includes("hits a ground ball") ||
+    text.includes("hits a line drive")
+  ) {
+    result.isHit = true;
+    result.bases = 1;
+    result.type = "single";
+  } else if (text.includes("hits a double")) {
+    result.isHit = true;
+    result.bases = 2;
+    result.type = "double";
+  } else if (text.includes("hits a triple")) {
+    result.isHit = true;
+    result.bases = 3;
+    result.type = "triple";
+  } else if (text.includes("hits a home run")) {
+    result.isHit = true;
+    result.bases = 4;
+    result.type = "homer";
+  } 
+  // Classify errors (without overriding hits)
+  else if (text.includes("reaches on an error")) {
+    result.isError = true;
+    result.type = "error";
+  }
+
+  return result;
+}
+
+// Preserve initials (e.g., "A L" -> "A L")
 export function normalizePlayerName(name: string): string {
   return name
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+    .replace(/[^a-zA-Z\s]/g, "")
+    .trim()
+    .toUpperCase();
 }
 
 /**

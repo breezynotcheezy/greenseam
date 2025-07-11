@@ -1,4 +1,4 @@
-import { z } from "zod"
+import { ParsedPlay } from "./types";
 
 export const importFormSchema = z.object({
   file: z.any().optional(), // Change from File instance check to any since File is not available during validation
@@ -21,3 +21,7 @@ export const uploadRecordSchema = z.object({
 })
 
 export type UploadRecord = z.infer<typeof uploadRecordSchema>
+
+export function validateParsedData(data: ParsedPlay[]): boolean {
+  return !data.some((play) => play.isHit && play.isError);
+}
