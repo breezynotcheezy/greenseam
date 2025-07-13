@@ -213,6 +213,27 @@ export function filterPlaysByPlayerNames(plays: ParsedPlay[], playerNames: strin
 
 // Classify hits and errors
 export function parsePlayResult(text: string): ParsedPlay {
+  // Check if the text is just a result type, not a player action
+  const resultOnlyPatterns = [
+    /^(Single|Double|Triple|Home\s+Run|Walk|Strikeout|Strike\s+Out|Fly\s+Out|Ground\s+Out|Pop\s+Out|Fielder'?s?\s+Choice|Infield\s+Fly|Error|Hit\s+by\s+Pitch|HBP|Hit|Out|K)$/i,
+    /^\d+\s+Outs?$/i,
+    /^In\s+play\.$/i
+  ];
+  
+  for (const pattern of resultOnlyPatterns) {
+    if (pattern.test(text)) {
+      console.log(`[DEBUG] parsePlayResult: Text "${text}" is just a result, not a player action`);
+      return {
+        playerName: "Unknown Player",
+        result: text,
+        isHit: false,
+        isError: false,
+        bases: 0,
+        type: "out"
+      };
+    }
+  }
+
   const result: ParsedPlay = {
     playerName: text.split(" ")[0],
     result: text,
@@ -509,100 +530,349 @@ export function extractGameInfo(text: string): {
   return { gameDate, teams, inning, location, gameId };
 }
 
-// Extract play-by-play data without AI
+// Extract play-by-play data with extremely precise parsing for GameChanger format
 export function extractPlaysFromText(text: string): ParsedPlay[] {
   const lines = text.split('\n');
   const plays: ParsedPlay[] = [];
   const gameInfo = extractGameInfo(text);
   
-  // Common patterns in GameChanger data
-  const playerActionPattern = /([A-Za-z\s\-.]+)\s+(singled|doubled|tripled|homered|grounded|flied|lined|popped|struck out|hit by pitch)/i;
-  const countPattern = /\((\d-\d)\)/;
-  const inningPattern = /inning\s+(\d+)|(\d+)(st|nd|rd|th)\s+inning/i;
-  const situationPattern = /(runner(s)? on|bases loaded|no outs|1 out|2 outs)/i;
-  
   let currentInning: number | undefined;
+  let currentCount: string | undefined;
+  let currentPlayer: string | undefined;
+  let currentResult: string | undefined;
   
-  for (const line of lines) {
-    // Try to extract inning information
-    const inningMatch = line.match(inningPattern);
-    if (inningMatch) {
-      const inningNum = inningMatch[1] || inningMatch[2];
-      if (inningNum) {
-        currentInning = parseInt(inningNum, 10);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    
+    // Skip lines that are just result indicators without player context
+    const resultOnlyPatterns = [
+      /^(Single|Double|Triple|Home\s+Run|Walk|Strikeout|Strike\s+Out|Fly\s+Out|Ground\s+Out|Pop\s+Out|Fielder'?s?\s+Choice|Infield\s+Fly|Error|Hit\s+by\s+Pitch|HBP)$/i,
+      /^\d+\s+Outs?$/i,
+      /^In\s+play\.$/i,
+      /^Ball\s+\d+/i,
+      /^Strike\s+\d+/i,
+      /^Foul/i,
+      /^WDST\s+\d+\s*-\s*FRNT\s+\d+/i
+    ];
+    
+    // Check if this line is just a result indicator
+    let isResultOnly = false;
+    for (const pattern of resultOnlyPatterns) {
+      if (pattern.test(line)) {
+        isResultOnly = true;
+        break;
       }
+    }
+    
+    if (isResultOnly) {
+      console.log(`[DEBUG] Skipping result-only line: "${line}"`);
       continue;
     }
     
-    // Try to extract player and action
-    const playerActionMatch = line.match(playerActionPattern);
-    if (playerActionMatch) {
-      const playerName = playerActionMatch[1].trim();
-      const action = playerActionMatch[2].toLowerCase();
+    // Extract inning information
+    const inningMatch = line.match(/(?:Bottom|Top)\s+(\d+)(?:st|nd|rd|th)\s*[-–]\s*(.+)/i);
+    if (inningMatch) {
+      currentInning = parseInt(inningMatch[1], 10);
+      continue;
+    }
+    
+    // Extract count information
+    const countMatch = line.match(/\((\d-\d)\)/);
+    if (countMatch) {
+      currentCount = countMatch[1];
+    }
+    
+    // Look for player at bat
+    const atBatMatch = line.match(/^([A-Za-z\s\-\.]+)\s+at\s+bat/i);
+    if (atBatMatch) {
+      currentPlayer = atBatMatch[1].trim();
+      continue;
+    }
+    
+    // Look for result types that come before the detailed description
+    const resultMatch = line.match(/^(Single|Double|Triple|Home\s+Run|Walk|Strikeout|Strike\s+Out|Fly\s+Out|Ground\s+Out|Pop\s+Out|Fielder'?s?\s+Choice|Infield\s+Fly|Error|Hit\s+by\s+Pitch|HBP)/i);
+    if (resultMatch) {
+      currentResult = resultMatch[1];
+      continue;
+    }
+    
+    // Now look for the detailed play descriptions with CORRECT player name extraction
+    const playPatterns = [
+      // Singles - Player name is ALWAYS the first group
+      /^([A-Za-z\s\-\.]+)\s+singles?\s+on\s+(?:a\s+)?(ground\s+ball|fly\s+ball|line\s+drive|pop\s+fly)\s+(?:to\s+)?([A-Za-z\s]+)/i,
+      /^([A-Za-z\s\-\.]+)\s+singles?\s+(?:on\s+)?(?:a\s+)?(ground\s+ball|fly\s+ball|line\s+drive|pop\s+fly)/i,
       
-      // Determine result
-      let result = "";
-      let bbType: string | undefined;
+      // Doubles
+      /^([A-Za-z\s\-\.]+)\s+doubles?\s+on\s+(?:a\s+)?(ground\s+ball|fly\s+ball|line\s+drive)\s+(?:to\s+)?([A-Za-z\s]+)/i,
+      /^([A-Za-z\s\-\.]+)\s+doubles?\s+(?:on\s+)?(?:a\s+)?(ground\s+ball|fly\s+ball|line\s+drive)/i,
       
-      if (action.includes("singled")) {
-        result = "Hit";
-        bbType = "1B";
-      } else if (action.includes("doubled")) {
-        result = "Hit";
-        bbType = "2B";
-      } else if (action.includes("tripled")) {
-        result = "Hit";
-        bbType = "3B";
-      } else if (action.includes("homered")) {
-        result = "Hit";
-        bbType = "HR";
-      } else if (action.includes("struck out")) {
-        result = "K";
-      } else if (action.includes("hit by pitch")) {
-        result = "HBP";
-      } else if (action.includes("ground")) {
-        result = "Out";
-        bbType = "Ground";
-      } else if (action.includes("fl")) {
-        result = "Out";
-        bbType = "Fly";
-      } else if (action.includes("lin")) {
-        result = "Out";
-        bbType = "Line";
-      } else if (action.includes("pop")) {
-        result = "Out";
-        bbType = "Fly";
+      // Triples
+      /^([A-Za-z\s\-\.]+)\s+triples?\s+on\s+(?:a\s+)?(ground\s+ball|fly\s+ball|line\s+drive)\s+(?:to\s+)?([A-Za-z\s]+)/i,
+      /^([A-Za-z\s\-\.]+)\s+triples?\s+(?:on\s+)?(?:a\s+)?(ground\s+ball|fly\s+ball|line\s+drive)/i,
+      
+      // Home runs
+      /^([A-Za-z\s\-\.]+)\s+(?:hits?\s+a\s+)?home\s+runs?\s+(?:to\s+)?([A-Za-z\s]+)/i,
+      /^([A-Za-z\s\-\.]+)\s+(?:hits?\s+a\s+)?home\s+runs?/i,
+      
+      // Walks
+      /^([A-Za-z\s\-\.]+)\s+walks?\s+(?:,?\s+[A-Za-z\s]+)?(?:pitching)?/i,
+      
+      // Strikeouts
+      /^([A-Za-z\s\-\.]+)\s+strikes?\s+out\s+(?:swinging|looking)?(?:,?\s+[A-Za-z\s]+)?(?:pitching)?/i,
+      /^([A-Za-z\s\-\.]+)\s+struck\s+out\s+(?:swinging|looking)?(?:,?\s+[A-Za-z\s]+)?(?:pitching)?/i,
+      
+      // Fly outs
+      /^([A-Za-z\s\-\.]+)\s+flies?\s+out\s+(?:to\s+)?([A-Za-z\s]+)/i,
+      /^([A-Za-z\s\-\.]+)\s+flied\s+out\s+(?:to\s+)?([A-Za-z\s]+)/i,
+      
+      // Ground outs
+      /^([A-Za-z\s\-\.]+)\s+grounds?\s+out\s+(?:to\s+)?([A-Za-z\s]+)/i,
+      /^([A-Za-z\s\-\.]+)\s+grounded\s+out\s+(?:to\s+)?([A-Za-z\s]+)/i,
+      
+      // Pop outs
+      /^([A-Za-z\s\-\.]+)\s+pops?\s+out\s+(?:to\s+)?([A-Za-z\s]+)/i,
+      /^([A-Za-z\s\-\.]+)\s+popped\s+out\s+(?:to\s+)?([A-Za-z\s]+)/i,
+      
+      // Fielder's choice
+      /^([A-Za-z\s\-\.]+)\s+grounds?\s+into\s+fielder'?s?\s+choice\s+(?:to\s+)?([A-Za-z\s]+)/i,
+      /^([A-Za-z\s\-\.]+)\s+grounded\s+into\s+fielder'?s?\s+choice\s+(?:to\s+)?([A-Za-z\s]+)/i,
+      
+      // Infield fly
+      /^([A-Za-z\s\-\.]+)\s+out\s+on\s+infield\s+fly\s+(?:to\s+)?([A-Za-z\s]+)/i,
+      
+      // Hit by pitch
+      /^([A-Za-z\s\-\.]+)\s+hit\s+by\s+pitch/i,
+      /^([A-Za-z\s\-\.]+)\s+hbp/i,
+      
+      // Errors
+      /^([A-Za-z\s\-\.]+)\s+reaches?\s+on\s+(?:an?\s+)?error\s+(?:by\s+)?([A-Za-z\s]+)/i
+    ];
+    
+    let matched = false;
+    for (const pattern of playPatterns) {
+      const match = line.match(pattern);
+      if (match) {
+        const playerName = match[1].trim();
+        const action = match[2] || '';
+        const location = match[3] || '';
+        
+        console.log(`[DEBUG] Pattern match: Line="${line}" | Player="${playerName}" | Action="${action}" | Location="${location}"`);
+        
+        // CRITICAL: Validate that we have a proper player name (not a result)
+        const invalidNames = ['hit', 'k', 'out', 'walk', 'single', 'double', 'triple', 'home run', 'strikeout', 'fly out', 'ground out', 'pop out', 'fielder\'s choice', 'infield fly', 'error', 'h', 'o'];
+        const isValidPlayerName = playerName && 
+          playerName.length > 0 && 
+          !invalidNames.includes(playerName.toLowerCase()) &&
+          /^[A-Za-z\s\-\.]+$/.test(playerName) &&
+          playerName.split(' ').length >= 1;
+        
+        if (isValidPlayerName) {
+          // Determine result and type
+          let result = "";
+          let bbType: string | undefined;
+          let isHit = false;
+          let bases = 0;
+          let type: 'single' | 'double' | 'triple' | 'homer' | 'out' | 'error' = 'out';
+          let isError = false;
+          
+          const actionLower = action.toLowerCase();
+          const lineLower = line.toLowerCase();
+          
+          // Hit detection
+          if (lineLower.includes('singles') || lineLower.includes('single') || 
+              (actionLower.includes('ground ball') && !lineLower.includes('out'))) {
+            result = "Hit";
+            bbType = "1B";
+            isHit = true;
+            bases = 1;
+            type = "single";
+          } else if (lineLower.includes('doubles') || lineLower.includes('double')) {
+            result = "Hit";
+            bbType = "2B";
+            isHit = true;
+            bases = 2;
+            type = "double";
+          } else if (lineLower.includes('triples') || lineLower.includes('triple')) {
+            result = "Hit";
+            bbType = "3B";
+            isHit = true;
+            bases = 3;
+            type = "triple";
+          } else if (lineLower.includes('home run') || lineLower.includes('homer')) {
+            result = "Hit";
+            bbType = "HR";
+            isHit = true;
+            bases = 4;
+            type = "homer";
+          }
+          // Walk detection
+          else if (lineLower.includes('walks') || lineLower.includes('walk')) {
+            result = "Walk";
+            bbType = "BB";
+          }
+          // Strikeout detection
+          else if (lineLower.includes('strikes out') || lineLower.includes('struck out') || lineLower.includes('strikeout')) {
+            result = "K";
+            bbType = "K";
+          }
+          // Hit by pitch
+          else if (lineLower.includes('hit by pitch') || lineLower.includes('hbp')) {
+            result = "HBP";
+            bbType = "HBP";
+          }
+          // Error detection
+          else if (lineLower.includes('error')) {
+            result = "Error";
+            bbType = "E";
+            isError = true;
+            type = "error";
+          }
+          // Out detection
+          else if (lineLower.includes('flies out') || lineLower.includes('flied out') || lineLower.includes('fly out')) {
+            result = "Out";
+            bbType = "Fly";
+          } else if (lineLower.includes('grounds out') || lineLower.includes('grounded out') || lineLower.includes('ground out')) {
+            result = "Out";
+            bbType = "Ground";
+          } else if (lineLower.includes('pops out') || lineLower.includes('popped out') || lineLower.includes('pop out')) {
+            result = "Out";
+            bbType = "Fly";
+          } else if (lineLower.includes('fielder\'s choice') || lineLower.includes('fielders choice')) {
+            result = "Out";
+            bbType = "FC";
+          } else if (lineLower.includes('infield fly')) {
+            result = "Out";
+            bbType = "IF";
+          }
+          
+          if (result) {
+            console.log(`[DEBUG] Creating play: Player="${playerName}" | Result="${result}" | Type="${type}"`);
+            
+            const play: ParsedPlay = {
+              playerName,
+              result,
+              bbType,
+              gameDate: gameInfo.gameDate,
+              inning: currentInning,
+              count: currentCount,
+              isHit,
+              isError,
+              bases,
+              type,
+              inPlay: isHit || result === "Out",
+              rbi: 0, // Will be calculated later
+              runs: 0, // Will be calculated later
+              isHomeRun: type === 'homer',
+              isStrikeout: result === 'K',
+              isWalk: result === 'Walk',
+              isHBP: result === 'HBP',
+              isSacFly: false,
+              stolenBases: 0,
+              caughtStealing: 0
+            };
+            
+            // Add location if available
+            if (location) {
+              play.location = location.trim();
+            }
+            
+            plays.push(play);
+            matched = true;
+            
+            // Reset context after successful match
+            currentPlayer = undefined;
+            currentResult = undefined;
+            break;
+          }
+        } else {
+          console.log(`[DEBUG] Skipping invalid player name: "${playerName}"`);
+        }
       }
+    }
+    
+    // If no pattern matched but we have context, try to create a basic play
+    // BUT ONLY if we have a valid player name (not a result)
+    if (!matched && currentPlayer && currentResult) {
+      // Additional validation for the fallback
+      const invalidNames = ['hit', 'k', 'out', 'walk', 'single', 'double', 'triple', 'home run', 'strikeout', 'fly out', 'ground out', 'pop out', 'fielder\'s choice', 'infield fly', 'error', 'h', 'o'];
+      const isValidPlayerName = currentPlayer && 
+        currentPlayer.length > 0 && 
+        !invalidNames.includes(currentPlayer.toLowerCase()) &&
+        /^[A-Za-z\s\-\.]+$/.test(currentPlayer) &&
+        currentPlayer.split(' ').length >= 1;
       
-      if (result) {
-        const play: ParsedPlay = {
-          playerName,
-          result,
-          gameDate: gameInfo.gameDate,
-          inning: currentInning,
-          isHit: result === "Hit",
-          isError: false,
-          bases: bbType === "1B" ? 1 : bbType === "2B" ? 2 : bbType === "3B" ? 3 : bbType === "HR" ? 4 : 0,
-          type: bbType === "1B" ? "single" : bbType === "2B" ? "double" : bbType === "3B" ? "triple" : bbType === "HR" ? "homer" : "out"
-        };
+      if (isValidPlayerName) {
+        console.log(`[DEBUG] Using context fallback: Player="${currentPlayer}" | Result="${currentResult}"`);
         
-        if (bbType) {
-          play.bbType = bbType;
+        let result = "";
+        let isHit = false;
+        let bases = 0;
+        let type: 'single' | 'double' | 'triple' | 'homer' | 'out' | 'error' = 'out';
+        
+        const resultLower = currentResult.toLowerCase();
+        
+        if (resultLower.includes('single')) {
+          result = "Hit";
+          isHit = true;
+          bases = 1;
+          type = "single";
+        } else if (resultLower.includes('double')) {
+          result = "Hit";
+          isHit = true;
+          bases = 2;
+          type = "double";
+        } else if (resultLower.includes('triple')) {
+          result = "Hit";
+          isHit = true;
+          bases = 3;
+          type = "triple";
+        } else if (resultLower.includes('home run')) {
+          result = "Hit";
+          isHit = true;
+          bases = 4;
+          type = "homer";
+        } else if (resultLower.includes('walk')) {
+          result = "Walk";
+        } else if (resultLower.includes('strikeout') || resultLower.includes('strike out')) {
+          result = "K";
+        } else if (resultLower.includes('fly out') || resultLower.includes('ground out') || resultLower.includes('pop out')) {
+          result = "Out";
         }
         
-        // Extract count if available
-        const countMatch = line.match(countPattern);
-        if (countMatch) {
-          play.count = countMatch[1];
+        if (result) {
+          console.log(`[DEBUG] Creating fallback play: Player="${currentPlayer}" | Result="${result}" | Type="${type}"`);
+          
+          const play: ParsedPlay = {
+            playerName: currentPlayer,
+            result,
+            gameDate: gameInfo.gameDate,
+            inning: currentInning,
+            count: currentCount,
+            isHit,
+            isError: false,
+            bases,
+            type,
+            inPlay: isHit || result === "Out",
+            rbi: 0,
+            runs: 0,
+            isHomeRun: type === 'homer',
+            isStrikeout: result === 'K',
+            isWalk: result === 'Walk',
+            isHBP: false,
+            isSacFly: false,
+            stolenBases: 0,
+            caughtStealing: 0
+          };
+          
+          plays.push(play);
+          currentPlayer = undefined;
+          currentResult = undefined;
         }
-        
-        // Extract situation if available
-        const situationMatch = line.match(situationPattern);
-        if (situationMatch) {
-          play.situation = situationMatch[0];
-        }
-        
-        plays.push(play);
+      } else {
+        console.log(`[DEBUG] Skipping fallback - invalid player name: "${currentPlayer}"`);
+        currentPlayer = undefined;
+        currentResult = undefined;
       }
     }
   }
@@ -633,4 +903,45 @@ export function isLikelyGameChangerData(text: string): boolean {
   
   // If at least 3 indicators are found, it's likely GameChanger data
   return score >= 3;
+}
+
+// Test function to verify pattern matching
+export function testPatternMatching() {
+  const testLines = [
+    "M L singles on a ground ball to center fielder R F, M M scores, L S advances to 3rd.",
+    "L S singles on a ground ball to second baseman K H, M M advances to 2nd.",
+    "J N strikes out swinging, S F pitching.",
+    "S R doubles on a fly ball to left fielder N A, E A scores.",
+    "L M walks, S F pitching, M L remains at 3rd, A L advances to 2nd."
+  ];
+  
+  console.log("[TEST] Testing pattern matching:");
+  
+  for (const line of testLines) {
+    console.log(`[TEST] Line: "${line}"`);
+    
+    // Test singles pattern
+    const singleMatch = line.match(/^([A-Za-z\s\-\.]+)\s+singles?\s+on\s+(?:a\s+)?(ground\s+ball|fly\s+ball|line\s+drive|pop\s+fly)\s+(?:to\s+)?([A-Za-z\s]+)/i);
+    if (singleMatch) {
+      console.log(`[TEST] Single match: Player="${singleMatch[1]}" | Action="${singleMatch[2]}" | Location="${singleMatch[3]}"`);
+    }
+    
+    // Test strikeout pattern
+    const strikeoutMatch = line.match(/^([A-Za-z\s\-\.]+)\s+strikes?\s+out\s+(?:swinging|looking)?(?:,?\s+[A-Za-z\s]+)?(?:pitching)?/i);
+    if (strikeoutMatch) {
+      console.log(`[TEST] Strikeout match: Player="${strikeoutMatch[1]}"`);
+    }
+    
+    // Test walk pattern
+    const walkMatch = line.match(/^([A-Za-z\s\-\.]+)\s+walks?\s+(?:,?\s+[A-Za-z\s]+)?(?:pitching)?/i);
+    if (walkMatch) {
+      console.log(`[TEST] Walk match: Player="${walkMatch[1]}"`);
+    }
+    
+    // Test double pattern
+    const doubleMatch = line.match(/^([A-Za-z\s\-\.]+)\s+doubles?\s+on\s+(?:a\s+)?(ground\s+ball|fly\s+ball|line\s+drive)\s+(?:to\s+)?([A-Za-z\s]+)/i);
+    if (doubleMatch) {
+      console.log(`[TEST] Double match: Player="${doubleMatch[1]}" | Action="${doubleMatch[2]}" | Location="${doubleMatch[3]}"`);
+    }
+  }
 }

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { db } from '@/lib/database'
 import { prisma } from '@/lib/prisma'
-import { parsePlayResult, normalizePlayerName, extractPlaysFromText } from '@/lib/parse-utils'
+import { normalizePlayerName } from '@/lib/parse-utils'
 import { ParsedPlay } from '@/lib/types'
 
 // Initialize OpenAI
@@ -59,20 +59,126 @@ export async function POST(request: Request) {
       .replace(/\n+/g, '\n')
       .trim();
 
-    // Use our improved parsing logic instead of OpenAI
-    const plays = extractPlaysFromText(cleanText);
+    // Split into lines and filter out empty lines
+    const lines = cleanText.split('\n').map(l => l.trim()).filter(Boolean);
+
+    // Use OpenAI to extract player name and result for each play line
+    const plays: ParsedPlay[] = [];
+    console.log(`[DEBUG] Processing ${lines.length} lines`);
     
-    // Apply our enhanced parsing to each play
-    const enhancedPlays = plays.map(play => {
-      const enhanced = parsePlayResult(play.result || '');
-      return {
-        ...play,
-        ...enhanced
-      };
-    });
+    for (const line of lines) {
+      // Only skip obvious non-play lines
+      if (/^(Top|Bottom) \d+(st|nd|rd|th)/i.test(line) || 
+          /^\d+ Outs?$/i.test(line) || 
+          /^WDST|^FRNT$/i.test(line) ||
+          /^Ball \d+/i.test(line) ||
+          /^Strike \d+/i.test(line) ||
+          /^Foul$/i.test(line) ||
+          /^In play\.?$/i.test(line) ||
+          /^Lineup changed:/i.test(line)) {
+        console.log(`[DEBUG] Skipping non-play line: "${line}"`);
+        continue;
+      }
+      
+      // Skip lines that are just result types without player context
+      if (/^(Single|Double|Triple|Home\s+Run|Walk|Strikeout|Strike\s+Out|Fly\s+Out|Ground\s+Out|Pop\s+Out|Fielder'?s?\s+Choice|Infield\s+Fly|Error|Hit\s+by\s+Pitch|HBP)$/i.test(line)) {
+        console.log(`[DEBUG] Skipping result-only line: "${line}"`);
+        continue;
+      }
+      
+      console.log(`[DEBUG] Processing line: "${line}"`);
+      
+      // Prompt OpenAI for structured extraction
+      const prompt = `Extract the player name and categorize the play result from the following baseball play description. 
+
+For the result, use these standardized categories:
+- "Single" for any single hit
+- "Double" for any double hit  
+- "Triple" for any triple hit
+- "Home Run" for any home run
+- "Walk" for any walk or base on balls
+- "Strikeout" for any strikeout (K)
+- "Out" for any out (fly out, ground out, pop out, etc.)
+- "Hit by Pitch" for HBP
+- "Error" for reaching on error
+
+Respond ONLY as JSON in the format: { "playerName": "...", "result": "..." }
+
+Play: "${line}"`;
+      try {
+        const completion = await openai.chat.completions.create({
+          model: 'gpt-3.5-turbo',
+          messages: [
+            { role: 'system', content: 'You are a baseball play parser. Extract the player name and play result from the play description.' },
+            { role: 'user', content: prompt }
+          ],
+          max_tokens: 100,
+          temperature: 0,
+        });
+        const aiResponse = completion.choices[0]?.message?.content || '';
+        console.log(`[DEBUG] OpenAI response: "${aiResponse}"`);
+        
+        let parsed;
+        try {
+          parsed = JSON.parse(aiResponse);
+        } catch (e) {
+          // Try to extract JSON from the response if it contains extra text
+          const match = aiResponse.match(/\{[\s\S]*\}/);
+          if (match) {
+            parsed = JSON.parse(match[0]);
+          } else {
+            console.error(`[ERROR] Failed to parse OpenAI response: "${aiResponse}"`);
+            throw new Error('AI did not return valid JSON');
+          }
+        }
+        
+        if (parsed && parsed.playerName && parsed.result) {
+          console.log(`[DEBUG] Successfully parsed: Player="${parsed.playerName}", Result="${parsed.result}"`);
+          
+          // Calculate hit-related fields based on the AI's standardized result
+          const result = parsed.result.toLowerCase();
+          const isHit = result.includes('single') || result.includes('double') || result.includes('triple') || result.includes('home run');
+          const isHomeRun = result.includes('home run');
+          const isStrikeout = result.includes('strikeout') || result.includes('k');
+          const isWalk = result.includes('walk');
+          const isHBP = result.includes('hit by pitch') || result.includes('hbp');
+          const isOut = result.includes('out');
+          
+          // Calculate bases for hits
+          let bases = 0;
+          if (result.includes('single')) bases = 1;
+          else if (result.includes('double')) bases = 2;
+          else if (result.includes('triple')) bases = 3;
+          else if (result.includes('home run')) bases = 4;
+          
+          console.log(`[DEBUG] Calculated: isHit=${isHit}, bases=${bases}, result="${parsed.result}"`);
+          
+          plays.push({
+            playerName: parsed.playerName,
+            result: parsed.result,
+            isHit,
+            isError: false,
+            bases,
+            type: isHit ? (bases === 1 ? 'single' : bases === 2 ? 'double' : bases === 3 ? 'triple' : 'homer') : 'out',
+            isHomeRun,
+            isStrikeout,
+            isWalk,
+            isHBP,
+          });
+        } else {
+          console.warn(`[WARN] Invalid parsed data:`, parsed);
+        }
+      } catch (err) {
+        console.error('[ERROR] OpenAI extraction error for line:', line, err);
+      }
+    }
+    
+    console.log(`[DEBUG] Total plays extracted: ${plays.length}`);
 
     // Remove duplicates
-    const uniquePlays = removeDuplicates(enhancedPlays);
+    const uniquePlays = removeDuplicates(plays);
+    console.log(`[DEBUG] Unique plays after deduplication:`, uniquePlays.length);
+    console.log('[DEBUG] Plays to store:', JSON.stringify(uniquePlays, null, 2));
 
     // Store plays in database
     const result = await storePlays(uniquePlays, teamName);
@@ -94,7 +200,7 @@ export async function POST(request: Request) {
 function removeDuplicates(plays: ParsedPlay[]): ParsedPlay[] {
   const seen = new Set<string>()
   return plays.filter(play => {
-    const key = `${play.playerName}-${play.result}-${play.bbType || ''}-${play.inning || ''}`
+    const key = `${play.playerName}-${play.result}`
     if (seen.has(key)) return false
     seen.add(key)
     return true
@@ -119,6 +225,10 @@ async function storePlays(plays: ParsedPlay[], teamName: string): Promise<any> {
 
   for (const play of plays) {
     try {
+      if (!play.playerName || !play.result) {
+        console.warn('[WARN] Skipping play with missing playerName or result:', play);
+        continue;
+      }
       // Normalize player name
       const canonical = normalizePlayerName(play.playerName || '')
 
@@ -139,34 +249,22 @@ async function storePlays(plays: ParsedPlay[], teamName: string): Promise<any> {
         newPlayers++
       }
 
-      // Add plate appearance with enhanced data
+      // Always add plate appearance, even if only playerName and result are present
       await prisma.plateAppearance.create({
         data: {
           playerId: player.id,
           result: play.result || '',
-          bbType: play.bbType,
-          gameDate: play.gameDate || new Date().toISOString().split('T')[0],
-          inning: play.inning,
-          count: play.count,
-          pitchCount: play.pitchCount,
-          inPlay: play.inPlay || false,
-          exitVelocity: play.exitVelocity,
-          launchAngle: play.launchAngle,
-          distance: play.distance,
-          location: play.location,
-          contactType: play.contactType,
-          pitchType: play.pitchType,
-          rbi: play.rbi || 0,
-          runs: play.runs || 0,
-          isHomeRun: play.isHomeRun || play.type === 'homer',
-          isStrikeout: play.isStrikeout || play.result === 'K',
-          isWalk: play.isWalk || play.result === 'Walk',
-          isHBP: play.isHBP || play.result === 'HBP',
-          isSacFly: play.isSacFly || false,
-          stolenBases: play.stolenBases || 0,
-          caughtStealing: play.caughtStealing || 0,
-          leverageIndex: play.leverageIndex,
-          clutchSituation: play.clutchSituation,
+          gameDate: new Date().toISOString().split('T')[0], // Today's date as default
+          inPlay: play.isHit || play.result.toLowerCase().includes('out'),
+          rbi: 0,
+          runs: 0,
+          isHomeRun: play.isHomeRun || false,
+          isStrikeout: play.isStrikeout || false,
+          isWalk: play.isWalk || false,
+          isHBP: play.isHBP || false,
+          isSacFly: false,
+          stolenBases: 0,
+          caughtStealing: 0,
         }
       })
 

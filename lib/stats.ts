@@ -86,11 +86,11 @@ export function calculateStats(plateAppearances: PlateAppearance[]): BaseballSta
       stats.ab!++
     }
 
-    if (pa.result === 'Hit') {
+    if (pa.result === 'Single' || pa.result === 'Double' || pa.result === 'Triple' || pa.result === 'Home Run') {
       stats.hits!++
-      if (pa.bbType === '2B') stats.doubles!++
-      if (pa.bbType === '3B') stats.triples!++
-      if (pa.isHomeRun) stats.homeRuns!++
+      if (pa.result === 'Double') stats.doubles!++
+      if (pa.result === 'Triple') stats.triples!++
+      if (pa.result === 'Home Run') stats.homeRuns!++
     }
 
     stats.runs! += pa.runs
@@ -120,7 +120,7 @@ export function calculateStats(plateAppearances: PlateAppearance[]): BaseballSta
       totalLeverageIndex += pa.leverageIndex
       if (pa.leverageIndex > 1.5) {
         clutchPA++
-        if (pa.result === 'Hit' || pa.isWalk || pa.isHBP) {
+        if (pa.result === 'Single' || pa.result === 'Double' || pa.result === 'Triple' || pa.result === 'Home Run' || pa.isWalk || pa.isHBP) {
           clutchSuccess++
         }
       }
@@ -204,22 +204,4 @@ export const formatters = {
   zscore: (value: number) => value.toFixed(2),
 }
 
-// Stat display configurations
-export const statConfigs: Record<keyof BaseballStats, StatDisplayConfig> = {
-  games: {
-    label: 'G',
-    description: 'Games Played',
-    format: formatters.integer,
-    category: 'basic',
-    sortable: true,
-  },
-  pa: {
-    label: 'PA',
-    description: 'Plate Appearances',
-    format: formatters.integer,
-    category: 'basic',
-    sortable: true,
-    primaryStat: true,
-  },
-  // ... Add configurations for all other stats
-} 
+ 

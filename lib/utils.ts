@@ -80,3 +80,46 @@ export function exportHittersToExcel(hitters: Hitter[]) {
   // Generate Excel file
   XLSX.writeFile(wb, 'hitters.xlsx')
 }
+
+export function formatPlayerName(name: string): string {
+  // Check if the name is likely abbreviated (two single letters separated by space)
+  const abbreviatedPattern = /^[A-Z]\s[A-Z]$/;
+  
+  if (abbreviatedPattern.test(name)) {
+    // Format as "A. L." instead of "A L"
+    const parts = name.split(' ');
+    return `${parts[0]}. ${parts[1]}.`;
+  }
+  
+  // Check if it's a single letter (like "K" for strikeout)
+  if (/^[A-Z]$/.test(name)) {
+    return `${name}.`;
+  }
+  
+  return name;
+}
+
+export function isAbbreviatedName(name: string): boolean {
+  // Check if the name is likely abbreviated
+  const abbreviatedPattern = /^[A-Z]\s[A-Z]$/;
+  const singleLetterPattern = /^[A-Z]$/;
+  
+  return abbreviatedPattern.test(name) || singleLetterPattern.test(name);
+}
+
+export function getMappedPlayerName(name: string): string {
+  try {
+    const savedMappings = localStorage.getItem('playerNameMappings')
+    if (savedMappings) {
+      const mappings = JSON.parse(savedMappings)
+      const mapping = mappings.find((m: any) => m.abbreviated === name.toUpperCase())
+      if (mapping) {
+        return mapping.fullName
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load name mappings:', error)
+  }
+  
+  return formatPlayerName(name)
+}

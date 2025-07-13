@@ -7,6 +7,7 @@ import { PlayerStats } from "@/components/player-stats"
 import { PlayerInsights } from "@/components/player-insights"
 import { Trash2 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
+import { formatPlayerName, isAbbreviatedName, getMappedPlayerName } from "@/lib/utils"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,6 +53,11 @@ export function PlayerCard({ player }: PlayerCardProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const { toast } = useToast()
+
+  // Format the player name for display with mapping support
+  const displayName = getMappedPlayerName(player.name);
+  const isAbbreviated = isAbbreviatedName(player.name);
+
   const handleDelete = async () => {
     setIsDeleting(true)
     try {
@@ -106,23 +112,34 @@ export function PlayerCard({ player }: PlayerCardProps) {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md overflow-hidden">
-      <div className="p-4 border-b flex justify-between items-center">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900">
-            {player.name}
-          </h3>
-          <p className="text-sm text-gray-500">
-            {player.team.emoji} {player.team.name}
-          </p>
+    <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+              <span className="text-lg font-bold">{displayName.split(' ').map(n => n[0]).join('')}</span>
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                {displayName}
+                {isAbbreviated && (
+                  <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-1 rounded-full">
+                    Abbreviated
+                  </span>
+                )}
+              </h3>
+              <p className="text-blue-100 text-sm">{player.team.name}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowDeleteDialog(true)}
+            className="text-white/80 hover:text-white transition-colors"
+            title="Delete player"
+          >
+            <Trash2 className="h-5 w-5" />
+          </button>
         </div>
-        <button
-          onClick={() => setShowDeleteDialog(true)}
-          className="text-red-500 hover:text-red-700 transition-colors"
-          aria-label="Delete player"
-        >
-          <Trash2 className="h-5 w-5" />
-        </button>
       </div>
 
       <Tabs defaultValue="stats" value={activeTab} onValueChange={setActiveTab} className="w-full">

@@ -34,15 +34,15 @@ export async function GET(request: Request) {
         }
         
         // Basic counting stats
-        const hits = plateAppearances.filter((pa: PlateAppearance) => pa.result === "Hit").length;
+        const doubles = plateAppearances.filter((pa: PlateAppearance) => pa.result === "Double").length;
+        const triples = plateAppearances.filter((pa: PlateAppearance) => pa.result === "Triple").length;
+        const homeRuns = plateAppearances.filter((pa: PlateAppearance) => pa.isHomeRun).length;
+        const singles = plateAppearances.filter((pa: PlateAppearance) => pa.result === "Single").length;
+        const hits = singles + doubles + triples + homeRuns;
         const walks = plateAppearances.filter((pa: PlateAppearance) => pa.isWalk).length;
         const strikeouts = plateAppearances.filter((pa: PlateAppearance) => pa.isStrikeout).length;
         const hbp = plateAppearances.filter((pa: PlateAppearance) => pa.isHBP).length;
         const sacrificeFlies = plateAppearances.filter((pa: PlateAppearance) => pa.isSacFly).length;
-        const doubles = plateAppearances.filter((pa: PlateAppearance) => pa.bbType === "2B").length;
-        const triples = plateAppearances.filter((pa: PlateAppearance) => pa.bbType === "3B").length;
-        const homeRuns = plateAppearances.filter((pa: PlateAppearance) => pa.isHomeRun).length;
-        const singles = hits - (doubles + triples + homeRuns);
         const atBats = plateAppearances.length - walks - hbp - sacrificeFlies;
 
         // Calculate percentages

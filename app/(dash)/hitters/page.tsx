@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import { HitterCard } from '@/components/hitter-card'
+import { NameMappingPanel } from '@/components/name-mapping-panel'
 import { BaseballStats } from '@/lib/types'
 
 interface Hitter {
@@ -31,6 +32,7 @@ export default function HittersPage() {
   const [search, setSearch] = useState('')
   const [minPA, setMinPA] = useState([1])
   const [sortBy, setSortBy] = useState('pa')
+  const [showNameMapping, setShowNameMapping] = useState(false)
 
   // Fetch teams
   const { data: teams } = useSWR('/api/teams', fetcher)
@@ -81,136 +83,171 @@ export default function HittersPage() {
   }
 
   return (
-    <div className="container mx-auto p-4">
-      {/* Filters */}
-      <div className="mb-6 space-y-4">
-        <div className="flex flex-wrap gap-4">
-          <div className="min-w-[200px]">
-            <Label htmlFor="team">Team</Label>
-            <Select value={teamId} onValueChange={setTeamId}>
-              <SelectTrigger id="team">
-                <SelectValue placeholder="Select team" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Teams</SelectItem>
-                {teams?.map((team: any) => (
-                  <SelectItem key={team.id} value={team.id}>
-                    {team.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto p-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Hitters</h1>
+            <p className="text-gray-600 mt-1">
+              {filteredHitters.length} hitters found
+            </p>
           </div>
-
-          <div className="min-w-[200px]">
-            <Label htmlFor="search">Search Players</Label>
-            <Input
-              id="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Enter player name..."
-            />
-          </div>
-
-          <div className="min-w-[200px]">
-            <Label htmlFor="sort">Sort By</Label>
-            <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger id="sort">
-                <SelectValue placeholder="Sort by..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="name">Name</SelectItem>
-                <SelectItem value="team">Team</SelectItem>
-                <SelectItem value="pa">Plate Appearances</SelectItem>
-                <SelectItem value="avg">Batting Average</SelectItem>
-                <SelectItem value="obp">On-base %</SelectItem>
-                <SelectItem value="slg">Slugging %</SelectItem>
-                <SelectItem value="ops">OPS</SelectItem>
-                <SelectItem value="wOBA">wOBA</SelectItem>
-                <SelectItem value="wRC">wRC</SelectItem>
-                <SelectItem value="iso">ISO</SelectItem>
-                <SelectItem value="babip">BABIP</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="min-w-[150px]">
-            <Label htmlFor="min-pa">Minimum PA</Label>
-            <div className="flex items-center gap-2 h-10">
-              <Slider 
-                id="min-pa"
-                value={minPA} 
-                onValueChange={setMinPA} 
-                min={1} 
-                max={50} 
-                step={1} 
-                className="flex-1" 
-              />
-              <span className="text-sm font-medium w-8 text-center">{minPA[0]}</span>
-            </div>
-          </div>
-
-          <div className="flex-1 flex justify-end items-end">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={handleExport}
-              disabled={!filteredHitters || filteredHitters.length === 0}
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setShowNameMapping(!showNameMapping)}
+              className="flex items-center gap-2"
             >
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Export Excel
+              <Users className="h-4 w-4" />
+              {showNameMapping ? 'Hide' : 'Show'} Name Mapping
             </Button>
           </div>
         </div>
-      </div>
 
-      {/* Results */}
-      <div className="flex justify-between items-center">
-        <p className="text-sm text-muted-foreground">
-          {filteredHitters?.length || 0} player{(!filteredHitters || filteredHitters.length !== 1) ? "s" : ""} found
-        </p>
-      </div>
+        {/* Name Mapping Panel */}
+        {showNameMapping && hitters && (
+          <div className="mb-6">
+            <NameMappingPanel 
+              players={hitters}
+              onMappingUpdate={() => {
+                // Force re-render of hitter cards
+                // The cards will automatically update due to the mapping being in localStorage
+              }}
+            />
+          </div>
+        )}
 
-      {/* Error state */}
-      {error && (
-        <div className="text-center py-12 bg-red-50 rounded-lg border border-red-200">
-          <p className="text-red-600">Failed to load hitters</p>
-        </div>
-      )}
-
-      {/* Loading state */}
-      {isLoading && (
-        <div className="text-center py-12">
-          <p className="text-gray-500">Loading...</p>
-        </div>
-      )}
-
-      {/* Results grid */}
-      {filteredHitters && filteredHitters.length > 0 ? (
-        <Masonry
-          breakpointCols={{
-            default: 3,
-            1536: 3,
-            1280: 2,
-            1024: 2,
-            768: 1,
-          }}
-          className="flex -ml-4 w-auto"
-          columnClassName="pl-4 bg-clip-padding"
-        >
-          {filteredHitters.map((hitter) => (
-            <div key={hitter.id} className="mb-4">
-              <HitterCard {...hitter} />
+        {/* Filters */}
+        <div className="mb-6 space-y-4">
+          <div className="flex flex-wrap gap-4">
+            <div className="min-w-[200px]">
+              <Label htmlFor="team">Team</Label>
+              <Select value={teamId} onValueChange={setTeamId}>
+                <SelectTrigger id="team">
+                  <SelectValue placeholder="Select team" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Teams</SelectItem>
+                  {teams?.map((team: any) => (
+                    <SelectItem key={team.id} value={team.id}>
+                      {team.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          ))}
-        </Masonry>
-      ) : !isLoading && !error ? (
-        <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
-          <Users className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-1">No hitters found</h3>
-          <p className="text-gray-500">Try adjusting your filters or importing some data</p>
+
+            <div className="min-w-[200px]">
+              <Label htmlFor="search">Search Players</Label>
+              <Input
+                id="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Enter player name..."
+              />
+            </div>
+
+            <div className="min-w-[200px]">
+              <Label htmlFor="sort">Sort By</Label>
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger id="sort">
+                  <SelectValue placeholder="Sort by..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="name">Name</SelectItem>
+                  <SelectItem value="team">Team</SelectItem>
+                  <SelectItem value="pa">Plate Appearances</SelectItem>
+                  <SelectItem value="avg">Batting Average</SelectItem>
+                  <SelectItem value="obp">On-base %</SelectItem>
+                  <SelectItem value="slg">Slugging %</SelectItem>
+                  <SelectItem value="ops">OPS</SelectItem>
+                  <SelectItem value="wOBA">wOBA</SelectItem>
+                  <SelectItem value="wRC">wRC</SelectItem>
+                  <SelectItem value="iso">ISO</SelectItem>
+                  <SelectItem value="babip">BABIP</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="min-w-[150px]">
+              <Label htmlFor="min-pa">Minimum PA</Label>
+              <div className="flex items-center gap-2 h-10">
+                <Slider 
+                  id="min-pa"
+                  value={minPA} 
+                  onValueChange={setMinPA} 
+                  min={1} 
+                  max={50} 
+                  step={1} 
+                  className="flex-1" 
+                />
+                <span className="text-sm font-medium w-8 text-center">{minPA[0]}</span>
+              </div>
+            </div>
+
+            <div className="flex-1 flex justify-end items-end">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleExport}
+                disabled={!filteredHitters || filteredHitters.length === 0}
+              >
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Export Excel
+              </Button>
+            </div>
+          </div>
         </div>
-      ) : null}
+
+        {/* Results */}
+        <div className="flex justify-between items-center">
+          <p className="text-sm text-muted-foreground">
+            {filteredHitters?.length || 0} player{(!filteredHitters || filteredHitters.length !== 1) ? "s" : ""} found
+          </p>
+        </div>
+
+        {/* Error state */}
+        {error && (
+          <div className="text-center py-12 bg-red-50 rounded-lg border border-red-200">
+            <p className="text-red-600">Failed to load hitters</p>
+          </div>
+        )}
+
+        {/* Loading state */}
+        {isLoading && (
+          <div className="text-center py-12">
+            <p className="text-gray-500">Loading...</p>
+          </div>
+        )}
+
+        {/* Results grid */}
+        {filteredHitters && filteredHitters.length > 0 ? (
+          <Masonry
+            breakpointCols={{
+              default: 3,
+              1536: 3,
+              1280: 2,
+              1024: 2,
+              768: 1,
+            }}
+            className="flex -ml-4 w-auto"
+            columnClassName="pl-4 bg-clip-padding"
+          >
+            {filteredHitters.map((hitter) => (
+              <div key={hitter.id} className="mb-4">
+                <HitterCard {...hitter} />
+              </div>
+            ))}
+          </Masonry>
+        ) : !isLoading && !error ? (
+          <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
+            <Users className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-1">No hitters found</h3>
+            <p className="text-gray-500">Try adjusting your filters or importing some data</p>
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

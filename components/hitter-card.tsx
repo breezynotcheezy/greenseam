@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader } from './ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { PlayerStatsDetail } from './player-stats-detail'
 import { BaseballStats, statDisplayConfig } from '@/lib/types'
+import { formatPlayerName, isAbbreviatedName, getMappedPlayerName } from '@/lib/utils'
 
 interface HitterCardProps {
   id: string
@@ -34,17 +35,26 @@ export function HitterCard({ id, name, team, stats }: HitterCardProps) {
       return {
         key,
         label: config.label,
-        value: config.format(value || 0),
+        value,
         description: config.description,
       };
     });
+
+  // Format the player name for display with mapping support
+  const displayName = getMappedPlayerName(name);
+  const isAbbreviated = isAbbreviatedName(name);
 
   return (
     <Card className="w-full">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-xl font-semibold">{name}</span>
+            <span className="text-xl font-semibold">{displayName}</span>
+            {isAbbreviated && (
+              <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">
+                Abbreviated
+              </span>
+            )}
             <span className="text-sm text-muted-foreground">{team.name}</span>
           </div>
           <div className="flex items-center gap-2">

@@ -1,37 +1,47 @@
 export interface BaseballStats {
   // Basic stats
-  avg: number;
-  obp: number;
-  slg: number;
-  ops: number;
+  games: number;
+  pa: number;
+  ab: number;
   hits: number;
-  walks: number;
-  strikeouts: number;
   doubles: number;
   triples: number;
   homeRuns: number;
-  atBats: number;
-  plateAppearances: number;
-  kRate: number;
-  bbRate: number;
+  runs: number;
+  rbi: number;
+  walks: number;
+  strikeouts: number;
+  hbp: number;
+  sf: number;
+  sb: number;
+  cs: number;
+  avg: string;
+  obp: string;
+  slg: string;
+  ops: string;
+  iso: string;
+  babip: string;
   
   // Advanced stats
-  woba: number;
-  wraa: number;
-  wrcPlus: number;
+  wOBA: number;
+  wRAA: number;
+  wRC: number;
   
   // Contact quality
   hardContact: number;
-  mediumContact: number;
+  medContact: number;
   softContact: number;
   gbPercent: number;
   ldPercent: number;
   fbPercent: number;
   
+  // Rates
+  kRate: number;
+  bbRate: number;
+  
   // Situational stats
-  clutchPerformance: number;
-  leverageIndex: number;
-  zScore: number;
+  clutch: number;
+  zscore: number;
 }
 
 export interface Player {

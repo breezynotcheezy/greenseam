@@ -55,9 +55,13 @@ export async function GET(request: NextRequest) {
     const recentPA = plateAppearances.slice(-10);
     const recentResults = recentPA.map((pa: any) => pa.result);
     // Count recent outcomes
-    const recentHits = recentResults.filter((r: string) => r === "Hit").length;
-    const recentOuts = recentResults.filter((r: string) => r === "Out").length;
-    const recentKs = recentResults.filter((r: string) => r === "K").length;
+    const recentHits = recentResults.filter((r: string) => 
+      r === "Single" || r === "Double" || r === "Triple" || r === "Home Run"
+    ).length;
+    const recentOuts = recentResults.filter((r: string) => 
+      r === "Ground Out" || r === "Fly Out" || r === "Line Out" || r === "Pop Out" || r === "Strikeout"
+    ).length;
+    const recentKs = recentResults.filter((r: string) => r === "Strikeout").length;
     const recentWalks = recentResults.filter((r: string) => r === "Walk").length;
 
     // Calculate confidence based on sample size
